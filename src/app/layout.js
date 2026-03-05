@@ -1,44 +1,81 @@
-import './globals.css'
+"use client"; 
 
-export const metadata = {
-  title: 'الدروازة',
-  description: 'منصة الدروازة للألعاب - فك الشفرة واقلط',
-}
+import './globals.css'
+import Link from 'next/link'
+import { useState, useEffect } from 'react'
+import { usePathname } from 'next/navigation'
 
 export default function RootLayout({ children }) {
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const pathname = usePathname();
+  const isHomePage = pathname === "/";
+
+  // إغلاق القائمة تلقائياً عند تغيير الصفحة
+  useEffect(() => {
+    setIsDropdownOpen(false);
+  }, [pathname]);
+
   return (
     <html lang="ar" dir="rtl">
-      <body className="bg-[#F5E6CA] text-[#5D2E0A] font-sans min-h-screen flex flex-col">
+      <body className="bg-[#020617] text-slate-200 font-sans min-h-screen flex flex-col">
         
-        {/* الهيدر الثابت */}
-        <header className="sticky top-0 z-50 bg-[#EAD7B1] border-b-4 border-[#8B4513] shadow-md py-4 px-6">
+        <header className="sticky top-0 z-[6000] bg-slate-900/90 backdrop-blur-md border-b border-slate-800 shadow-lg py-4 px-6">
           <div className="max-w-7xl mx-auto grid grid-cols-3 items-center">
             
-            {/* اليمين: زر اللعبة */}
-            <div className="flex justify-start">
-              <button className="flex items-center gap-2 bg-[#8B4513] text-[#F5E6CA] px-4 py-2 rounded-md font-bold hover:bg-[#5D2E0A] transition shadow-sm">
-                <span>فك الشفرة</span>
-                <span className="text-xs">▼</span>
+            {/* اليمين: زر ألعابنا مع قائمة منسدلة */}
+            <div className="flex justify-start relative">
+              <button 
+                onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                className="flex items-center gap-2 bg-slate-800 border border-slate-700 text-slate-200 px-4 py-2 rounded-xl font-bold hover:bg-slate-700 hover:text-teal-400 transition-all shadow-sm text-xs sm:text-sm outline-none"
+              >
+                <span>{isHomePage ? "ألعابنــــا 🎮" : "فك الشفرة 🔍"}</span>
+                <span className={`text-[10px] transition-transform duration-300 ${isDropdownOpen ? 'rotate-180' : ''}`}>▼</span>
               </button>
+
+              {/* القائمة المنسدلة (تم حذف الرئيسية منها) */}
+              {isDropdownOpen && (
+                <div className="absolute top-full mt-2 right-0 w-48 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
+                  <div className="p-2 flex flex-col gap-1">
+                    <p className="text-[10px] font-black text-slate-500 px-3 py-1 uppercase tracking-widest">اختر اللعبة</p>
+                    <Link href="/room/NEW" className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-800 transition-colors group">
+                      <span className="text-sm font-bold group-hover:text-teal-400">فك الشفرة 🔍</span>
+                    </Link>
+                    <div className="border-t border-slate-800 my-1"></div>
+                    <button disabled className="flex items-center gap-3 px-3 py-2.5 rounded-xl opacity-40 cursor-not-allowed">
+                      <span className="text-sm font-bold italic">قريباً... ⏳</span>
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
-            {/* المنتصف: اسم الموقع */}
+            {/* المنتصف: شعار الدروازة (يرجعك للرئيسية) */}
             <div className="flex justify-center">
-              <h1 className="text-3xl font-black tracking-tighter cursor-pointer hover:scale-105 transition-transform">
-                الدروازة
-              </h1>
+              <Link href="/">
+                <h1 className="text-2xl sm:text-3xl font-black tracking-widest text-teal-400 cursor-pointer hover:scale-105 hover:text-teal-300 transition-all drop-shadow-md">
+                  الدروازة
+                </h1>
+              </Link>
             </div>
 
-            {/* اليسار: المساحة الفاضية */}
+            {/* اليسار: زر تطوير الموقع (الاستبيان) */}
             <div className="flex justify-end">
-              {/* مساحة فاضية */}
+              <a 
+                href="https://docs.google.com/forms/d/e/1FAIpQLSeQabOUnRPa40dQkm7SqvrW-3YiCGtwi2r3wecDmdPEassO3A/viewform?usp=dialog" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 bg-teal-500/10 border border-teal-500/20 text-teal-400 px-4 py-2 rounded-xl font-bold hover:bg-teal-500 hover:text-white transition-all shadow-sm text-xs sm:text-sm"
+              >
+                <span>تطوير</span>
+                <span className="hidden sm:inline">🛠️</span>
+              </a>
             </div>
 
           </div>
         </header>
 
-        {/* منطقة العمل */}
-        <main className="flex-grow p-4 md:p-8">
+        {/* إغلاق القائمة عند الضغط على أي مكان في المحتوى */}
+        <main className="flex-grow w-full" onClick={() => setIsDropdownOpen(false)}>
           {children}
         </main>
 

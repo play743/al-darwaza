@@ -1,26 +1,46 @@
 @import "tailwindcss";
 
+/* تعريف متغيرات الألوان بناءً على هوية مرشد */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #020617; /* Slate-950 الخلفية الأساسية */
+  --foreground: #f1f5f9; /* Slate-100 لون النص */
+  --accent-teal: #14b8a6; /* لون الهوية Teal */
 }
 
+/* دمج المتغيرات مع نظام Tailwind */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-teal-brand: var(--accent-teal);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
+/* فرض الوضع الليلي دائماً لمنع اللون الأبيض المزعج */
 body {
-  background: var(--background);
+  background-color: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+}
+
+/* تحسين السكرول بار ليكون متناسقاً مع التصميم */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #020617;
+}
+::-webkit-scrollbar-thumb {
+  background: #1e293b;
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-teal);
+}
+
+/* أنيميشن بسيط للتوهج (شيمر) */
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
 }
