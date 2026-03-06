@@ -1,76 +1,108 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { supabase } from "../../../lib/supabase"; 
 
-export default function LandingPage() {
+export default function FakAlshafraHome() {
   const router = useRouter();
-  const [roomCode, setRoomCode] = useState("");
+  const [playerName, setPlayerName] = useState("");
 
-  // دالة إنشاء روم جديد
-  const createRoom = () => {
-    const newCode = Math.random().toString(36).substring(2, 7).toUpperCase();
-    router.push(`/room/${newCode}`);
+  useEffect(() => {
+    const savedName = localStorage.getItem("darwaza_global_name");
+    if (savedName) setPlayerName(savedName);
+  }, []);
+
+  const createQuickRoom = async () => {
+    if (!playerName.trim()) return alert("تكفى اكتب اسمك قبل تدخل اللعب!");
+    
+    localStorage.setItem("darwaza_global_name", playerName);
+    const randomRoomId = Math.random().toString(36).substring(2, 8).toUpperCase();
+
+    const { error } = await supabase.from("rooms").insert({
+      id: randomRoomId,
+      name: `غرفة ${playerName}`,
+      status: "waiting",
+      is_locked: false
+    });
+
+    if (error) {
+      console.error("خطأ الإنشاء:", error);
+      return alert("فشل الاتصال بقاعدة البيانات لإنشاء الغرفة!");
+    }
+
+    router.push(`/room/${randomRoomId}`);
   };
 
-  // دالة الانضمام لروم موجود
-  const joinRoom = (e) => {
-    e.preventDefault();
-    if (roomCode.length === 5) {
-      router.push(`/room/${roomCode.toUpperCase()}`);
-    }
+  const goToLobby = () => {
+    if (!playerName.trim()) return alert("اكتب اسمك قبل الدخول!");
+    localStorage.setItem("darwaza_global_name", playerName);
+    router.push(`/lobby`); 
   };
 
   return (
-    <div className="min-h-[80vh] flex flex-col items-center justify-center p-4 relative overflow-hidden">
+    <div className="w-full min-h-screen bg-[#020617] flex flex-col items-center py-10 px-4 font-sans text-right" dir="rtl">
       
-      {/* تأثيرات الإضاءة الخلفية */}
-      <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-teal-500/10 blur-[100px] rounded-full"></div>
-      <div className="absolute bottom-1/4 right-1/4 w-64 h-64 bg-blue-500/10 blur-[100px] rounded-full"></div>
+      <style jsx global>{`
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Kufi+Arabic:wght@100..900&display=swap');
+        body { font-family: 'Noto Kufi Arabic', sans-serif; }
+      `}</style>
 
-      <div className="relative z-10 w-full max-w-md text-center">
-        <h1 className="text-5xl font-black text-white mb-4 tracking-tighter">الدروازة</h1>
-        <p className="text-slate-400 mb-12">تحدي الذكاء، فك الشفرة، واجمع أخوياك</p>
-
-        <div className="space-y-6">
-          {/* زر الإنشاء */}
-          <button 
-            onClick={createRoom}
-            className="w-full bg-teal-500 hover:bg-teal-400 text-slate-950 font-black py-4 rounded-2xl text-xl shadow-[0_0_20px_rgba(20,184,166,0.3)] transition-all active:scale-95"
-          >
-            إنشاء غرفة جديدة 🎮
-          </button>
-
-          <div className="flex items-center gap-4 py-2">
-            <div className="flex-grow h-[1px] bg-slate-800"></div>
-            <span className="text-slate-600 text-sm font-bold">أو</span>
-            <div className="flex-grow h-[1px] bg-slate-800"></div>
-          </div>
-
-          {/* نموذج الانضمام */}
-          <form onSubmit={joinRoom} className="space-y-3">
-            <input 
-              type="text" 
-              placeholder="اكتب كود الغرفة (مثال: C1XRG)"
-              value={roomCode}
-              onChange={(e) => setRoomCode(e.target.value)}
-              maxLength={5}
-              className="w-full bg-slate-900 border border-slate-800 text-white text-center py-4 rounded-2xl focus:outline-none focus:border-teal-500 transition-all uppercase font-mono tracking-widest"
-            />
-            <button 
-              type="submit"
-              disabled={roomCode.length !== 5}
-              className="w-full bg-slate-800 hover:bg-slate-700 text-teal-400 font-bold py-3 rounded-2xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              انضمام للغرفة
-            </button>
-          </form>
-        </div>
+      {/* زر العودة للرئيسية */}
+      <div className="w-full max-w-2xl flex justify-end mb-6">
+        <button onClick={() => router.push("/")} className="text-slate-400 hover:text-white text-xs font-bold transition-colors bg-slate-900 px-4 py-2 rounded-xl border border-slate-800 flex items-center gap-2">
+          العودة للرئيسية 🔙
+        </button>
       </div>
 
-      <footer className="absolute bottom-8 text-slate-700 text-xs font-bold tracking-widest">
-        DARWAZA ENGINE v1.0
-      </footer>
+      <div className="w-full max-w-2xl bg-slate-900/50 border border-slate-800/60 rounded-[2rem] p-6 sm:p-8 shadow-xl flex flex-col gap-8">
+        
+        {/* العنوان وطريقة اللعب */}
+        <section className="space-y-4">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-12 h-12 bg-slate-950 rounded-2xl border border-slate-800 flex items-center justify-center text-2xl shadow-inner">🔍</div>
+            <h1 className="text-2xl sm:text-3xl font-black text-white">فك الشفرة</h1>
+          </div>
+          
+          <div className="bg-slate-950/50 border border-slate-800/50 p-5 rounded-2xl space-y-3">
+            <h3 className="text-teal-400 font-black text-sm border-b border-slate-800 pb-2 mb-3">كيف تلعب؟ 📜</h3>
+            <ul className="text-slate-300 text-xs sm:text-sm font-bold space-y-2.5 leading-relaxed list-disc list-inside px-2">
+              <li>ينقسم اللاعبون إلى فريقين: <span className="text-blue-400">الدهاة</span> و <span className="text-red-400">الجهابذة</span>.</li>
+              <li>كل فريق يختار <span className="text-amber-400">مُشفر (قائد)</span> والبقية يكونون <span className="text-slate-100">مفككين شفرات</span>.</li>
+              <li>المُشفر يعطي تلميحة عبارة عن <span className="underline decoration-teal-500">كلمة واحدة فقط ورقم</span> (مثال: حيوان 3).</li>
+              <li>المفككون يتشاورون ويرشحون الكلمات التابعة لفريقهم بناءً على التلميحة.</li>
+              <li>احذروا من الكلمة <span className="text-red-500 font-black">السوداء (القاتلة)</span>، اختيارها ينهي اللعبة بخسارة فريقك فوراً! ☠️</li>
+            </ul>
+          </div>
+        </section>
+
+        {/* الخط الفاصل الخفيف */}
+        <hr className="border-slate-800/80 w-3/4 mx-auto" />
+
+        {/* منطقة إدخال الاسم والأزرار */}
+        <section className="flex flex-col items-center gap-4 pt-2">
+          <div className="w-full max-w-sm space-y-3">
+            <label className="text-[10px] font-bold text-slate-400 block text-center uppercase tracking-widest">أدخل اسمك للبدء</label>
+            <input 
+              type="text" 
+              value={playerName} 
+              onChange={(e) => setPlayerName(e.target.value)} 
+              placeholder="وش اسمك؟" 
+              className="w-full p-3.5 rounded-xl bg-[#020617] border border-slate-700 text-center text-sm font-bold text-white outline-none focus:border-teal-500 transition-colors shadow-inner" 
+            />
+          </div>
+
+          <div className="w-full max-w-sm grid grid-cols-1 gap-3 mt-2">
+            <button onClick={createQuickRoom} className="w-full bg-gradient-to-br from-teal-500 to-teal-700 text-white border border-teal-600/50 py-3.5 rounded-xl text-sm font-black hover:from-teal-400 hover:to-teal-600 transition-all shadow-lg flex justify-center items-center gap-2">
+              إنشاء غرفة خاصة 🚀
+            </button>
+            <button onClick={goToLobby} className="w-full bg-slate-800/80 hover:bg-slate-700 text-slate-200 border border-slate-700 py-3.5 rounded-xl text-sm font-bold transition-all shadow-sm flex justify-center items-center gap-2">
+              البحث عن غرف حالية 👥
+            </button>
+          </div>
+        </section>
+
+      </div>
     </div>
   );
 }

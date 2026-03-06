@@ -63,6 +63,7 @@ export default function GameBoard() {
   const [currentWords, setCurrentWords] = useState([]);
   const [revealedWords, setRevealedWords] = useState(Array(25).fill(false)); 
   const [wordColors, setWordColors] = useState([]); 
+  const [nominations, setNominations] = useState({}); // حالة الترشيحات الجديدة
 
   const isOwner = localPlayerId && roomOwnerId === localPlayerId;
   const autoJoinAttempted = useRef(false);
@@ -147,10 +148,18 @@ export default function GameBoard() {
       const blueCount = isBlueStarting ? 9 : 8;
       const redCount = isBlueStarting ? 8 : 9;
       const startingTurn = isBlueStarting ? 'blue' : 'red';
-      const colors = shuffleArray([...Array(blueCount).fill("bg-blue-600"), ...Array(redCount).fill("bg-red-600"), "bg-stone-800", ...Array(7).fill("bg-stone-300")]);
+      
+      // تطبيق الألوان الجديدة (أزرق، أحمر، أسود، أبيض)
+      const colors = shuffleArray([
+        ...Array(blueCount).fill("bg-blue-600"), 
+        ...Array(redCount).fill("bg-red-600"), 
+        "bg-black", 
+        ...Array(7).fill("bg-slate-100")
+      ]);
       
       await supabase.from('rooms').upsert({ 
         id: roomId, owner_id: currentPlayerId, board_words: words, board_colors: colors, board_revealed: Array(25).fill(false), logs: [],
+        board_nominations: {}, // تهيئة الترشيحات
         blue_score: blueCount, red_score: redCount, current_turn: startingTurn, game_phase: 'hinting',
         is_locked: false, allow_name_change: true, timer_duration: 120, timer_ends_at: null, pinned_spectators: []
       });
@@ -167,7 +176,6 @@ export default function GameBoard() {
   useEffect(() => {
     if (autoJoinAttempted.current || !roomId) return;
     const savedName = localStorage.getItem("darwaza_global_name");
-    
     if (savedName) {
       autoJoinAttempted.current = true;
       setUserName(savedName);
@@ -246,6 +254,7 @@ export default function GameBoard() {
           if (room.board_words) setCurrentWords(room.board_words);
           if (room.board_colors) setWordColors(room.board_colors);
           if (room.board_revealed) setRevealedWords(room.board_revealed);
+          if (room.board_nominations) setNominations(room.board_nominations);
         }
       } catch (error) {
         console.error("Fetch error:", error);
@@ -276,6 +285,7 @@ export default function GameBoard() {
         if (newData.board_revealed) setRevealedWords(newData.board_revealed);
         if (newData.board_words) setCurrentWords(newData.board_words);
         if (newData.board_colors) setWordColors(newData.board_colors);
+        if (newData.board_nominations) setNominations(newData.board_nominations); else setNominations({});
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'players', filter: `room_id=eq.${roomId}` }, () => {
         supabase.from('players').select('*').eq('room_id', roomId).then(({ data }) => {
@@ -325,10 +335,10 @@ export default function GameBoard() {
     const redCount = isBlueStarting ? 8 : 9;
     const startingTurn = isBlueStarting ? 'blue' : 'red';
     const words = shuffleArray(newWords).slice(0, 25);
-    const colors = shuffleArray([...Array(blueCount).fill("bg-blue-600"), ...Array(redCount).fill("bg-red-600"), "bg-stone-800", ...Array(7).fill("bg-stone-300")]);
+    const colors = shuffleArray([...Array(blueCount).fill("bg-blue-600"), ...Array(redCount).fill("bg-red-600"), "bg-black", ...Array(7).fill("bg-slate-100")]);
     
     await supabase.from('rooms').update({
-      board_words: words, board_colors: colors, board_revealed: Array(25).fill(false),
+      board_words: words, board_colors: colors, board_revealed: Array(25).fill(false), board_nominations: {},
       blue_score: blueCount, red_score: redCount, current_turn: startingTurn, game_phase: 'hinting', timer_ends_at: null, hint_word: '', hint_count: 0
     }).eq('id', roomId);
     addGameLog(`تم تحديث اللوحة بكلمات جديدة 🔄`);
@@ -387,23 +397,34 @@ export default function GameBoard() {
     setIsEditModalOpen(false);
   };
 
-  // نظام (Optimistic UI) لتحديث الإعدادات بدون تأخير
   const saveAdminSettings = async (newSettings) => {
     if (!isOwner) return;
-
-    // تحديث الواجهة فوراً للمالك بدون انتظار رد القاعدة
     if (newSettings.is_locked !== undefined) setIsRoomLocked(newSettings.is_locked);
     if (newSettings.allow_name_change !== undefined) setAllowNameChange(newSettings.allow_name_change);
     if (newSettings.timer_duration !== undefined) setTimerDuration(newSettings.timer_duration);
 
-    // إرسال التحديث في الخلفية
     await supabase.from('rooms').update(newSettings).eq('id', roomId);
     addGameLog(`تم تعديل إعدادات الروم ⚙️`);
   };
 
+  // نظام الترشيح والاختيار الجديد
   const handleWordClick = async (index) => {
     if (userRole !== "decoder" || userTeam !== currentTurn || gamePhase !== "guessing" || revealedWords[index]) return;
 
+    const wordNoms = nominations[index] || [];
+    const isNominatedByMe = wordNoms.includes(userName);
+
+    // إذا لم يرشحها اللاعب بعد، قم بترشيحها
+    if (!isNominatedByMe) {
+      const newNoms = { ...nominations };
+      newNoms[index] = [...wordNoms, userName];
+      setNominations(newNoms); 
+      await supabase.from('rooms').update({ board_nominations: newNoms }).eq('id', roomId);
+      addGameLog(`🔍 ${userName} رشّح كلمة "${currentWords[index]}"`, currentTurn);
+      return; 
+    }
+
+    // إذا ضغطها مرة ثانية (تأكيد الاختيار والكشف)
     let currentTimerEndsAt = timerEndsAt;
     if (!timerEndsAt && timerDuration > 0) currentTimerEndsAt = new Date(Date.now() + timerDuration * 1000).toISOString();
 
@@ -412,6 +433,10 @@ export default function GameBoard() {
     const actualColor = wordColors[index];
     const wordText = currentWords[index];
     
+    // مسح الترشيحات عن الكلمة اللي تم كشفها
+    const newNoms = { ...nominations };
+    delete newNoms[index];
+
     let newBlue = blueScore;
     let newRed = redScore;
     let newTurn = currentTurn;
@@ -421,7 +446,7 @@ export default function GameBoard() {
     else if (actualColor === "bg-red-600") newRed = Math.max(0, redScore - 1);
     
     const isCorrect = actualColor === (currentTurn === "blue" ? "bg-blue-600" : "bg-red-600");
-    addGameLog(`${userName} اختار "${wordText}" - ${isCorrect ? 'صح ✅' : 'خطأ ❌'}`, currentTurn);
+    addGameLog(`${userName} أكد اختيار "${wordText}" - ${isCorrect ? 'إجابة صحيحة ✅' : 'إجابة خاطئة ❌'}`, currentTurn);
 
     if (!isCorrect) {
       newTurn = currentTurn === "blue" ? "red" : "blue";
@@ -429,7 +454,7 @@ export default function GameBoard() {
     }
 
     await supabase.from('rooms').update({
-      board_revealed: newRevealed, blue_score: newBlue, red_score: newRed, current_turn: newTurn, game_phase: newPhase,
+      board_revealed: newRevealed, board_nominations: newNoms, blue_score: newBlue, red_score: newRed, current_turn: newTurn, game_phase: newPhase,
       timer_ends_at: currentTimerEndsAt, hint_word: newPhase === "hinting" ? "" : hintWord, hint_count: newPhase === "hinting" ? 0 : hintCount
     }).eq('id', roomId);
   };
@@ -453,20 +478,16 @@ export default function GameBoard() {
   };
 
   const sortPlayersByRole = (players) => [...players].sort((a, b) => (a.role === 'master' ? -1 : b.role === 'master' ? 1 : 0));
-  
   const bluePlayers = sortPlayersByRole(roomPlayers.filter(p => p.team === 'blue' && p.is_online));
   const blueMasters = bluePlayers.filter(p => p.role === 'master');
   const blueDecoders = bluePlayers.filter(p => p.role === 'decoder');
-
   const redPlayers = sortPlayersByRole(roomPlayers.filter(p => p.team === 'red' && p.is_online));
   const redMasters = redPlayers.filter(p => p.role === 'master');
   const redDecoders = redPlayers.filter(p => p.role === 'decoder');
-
   const spectatorPlayers = roomPlayers.filter(p => p.team === 'none' && p.is_online);
 
   const boardFaded = userRole === 'spectator' && isRoomLocked; 
 
-  // مكون بطاقة اللاعب داخل نافذة الأعضاء
   const PlayerListGroup = ({ title, players, color }) => {
     if (players.length === 0) return null;
     const isSpectator = color === 'stone';
@@ -519,11 +540,8 @@ export default function GameBoard() {
         <div className="fixed top-0 left-0 w-screen h-screen bg-[#020617] z-[-1]"></div>
         <div className="bg-slate-900 border border-slate-800 p-8 rounded-3xl w-full max-w-sm shadow-xl font-bold flex flex-col items-center">
           <h2 className="text-2xl font-black text-teal-400 mb-6 text-center uppercase tracking-widest">الدروازة 🚪</h2>
-          
           {isJoiningUI ? (
-            <div className="text-center text-slate-300 font-bold animate-pulse text-sm py-4">
-              جاري دخول الدروازة... 🚀
-            </div>
+            <div className="text-center text-slate-300 font-bold animate-pulse text-sm py-4">جاري دخول الدروازة... 🚀</div>
           ) : (
             <form onSubmit={handleJoinSubmit} className="space-y-4 w-full">
               <input type="text" value={userName} onChange={(e) => setUserName(e.target.value)} className="w-full p-4 rounded-xl bg-[#020617] border border-slate-700 text-center font-bold outline-none focus:border-teal-500 text-slate-200 placeholder-slate-500 transition-colors" placeholder="وش اسمك؟" required />
@@ -554,15 +572,13 @@ export default function GameBoard() {
           </div>
         )}
 
-        {/* شريط المهام المحدث للموبايل */}
         <div className="w-full max-w-2xl bg-slate-900 border border-slate-800 p-3 rounded-2xl shadow-sm flex flex-wrap justify-between items-center gap-y-3 gap-x-2 mx-2">
-          
           <div className="flex items-center gap-2 w-auto">
              <div className={`px-2 sm:px-3 py-1.5 rounded-xl text-[9px] sm:text-[10px] font-bold uppercase bg-[#020617] border border-slate-800 ${currentTurn === 'blue' ? 'text-blue-400' : 'text-red-400'}`}>
               دور: <span className="font-black">{currentTurn === 'blue' ? 'الدهاة' : 'الجهابذة'}</span> {gamePhase === "hinting" ? "(يلمح)" : "(يخمن)"}
             </div>
             {isOwner && (
-              <button onClick={() => setIsAdminModalOpen(true)} className="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2 sm:px-3 py-1.5 rounded-xl text-[9px] sm:text-[10px] font-bold shadow-sm transition-colors">
+              <button onClick={() => setIsAdminModalOpen(true)} className="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2 sm:px-3 py-1.5 rounded-xl text-[9px] sm:text-[10px] font-bold shadow-sm transition-colors relative z-10 cursor-pointer">
                 الإعدادات ⚙️
               </button>
             )}
@@ -575,10 +591,10 @@ export default function GameBoard() {
           )}
 
           <div className="flex items-center gap-2 w-auto">
-            <button onClick={() => setIsPlayersListOpen(true)} className="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[9px] sm:text-[10px] font-bold px-3 py-1.5 rounded-xl shadow-sm transition-colors">
+            <button onClick={() => setIsPlayersListOpen(true)} className="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[9px] sm:text-[10px] font-bold px-3 py-1.5 rounded-xl shadow-sm transition-colors relative z-10 cursor-pointer">
               👥 ({roomPlayers.filter(p => p.is_online).length})
             </button>
-            <button onClick={openSettings} className="bg-gradient-to-br from-teal-600 to-teal-800 text-white text-[9px] sm:text-[10px] font-bold px-3 py-1.5 rounded-xl shadow-sm hover:from-teal-500 hover:to-teal-700 transition-colors">
+            <button onClick={openSettings} className="bg-gradient-to-br from-teal-600 to-teal-800 text-white text-[9px] sm:text-[10px] font-bold px-3 py-1.5 rounded-xl shadow-sm hover:from-teal-500 hover:to-teal-700 transition-colors relative z-10 cursor-pointer">
               ملفي 👤
             </button>
           </div>
@@ -588,25 +604,51 @@ export default function GameBoard() {
           {currentWords.map((word, index) => {
             const isRevealed = revealedWords[index];
             const actualColor = wordColors[index];
+            const wordNoms = nominations[index] || [];
+            const isNominatedByMe = wordNoms.includes(userName);
+
             let btnClasses = "";
             if (isRevealed) {
-              if (actualColor === "bg-blue-600") btnClasses = "bg-gradient-to-b from-[#3B82F6] to-[#2563EB] text-white opacity-50";
-              else if (actualColor === "bg-red-600") btnClasses = "bg-gradient-to-b from-[#EF4444] to-[#DC2626] text-white opacity-50";
-              else if (actualColor === "bg-stone-300") btnClasses = "bg-[#4C7D7E] border border-[#385F60] text-[#F5F5DC] opacity-60";
-              else if (actualColor === "bg-stone-800") btnClasses = "bg-gradient-to-b from-stone-800 to-black text-white opacity-50";
+              if (actualColor === "bg-blue-600") btnClasses = "bg-gradient-to-b from-[#3B82F6] to-[#2563EB] text-white opacity-40 grayscale-[50%]";
+              else if (actualColor === "bg-red-600") btnClasses = "bg-gradient-to-b from-[#EF4444] to-[#DC2626] text-white opacity-40 grayscale-[50%]";
+              else if (actualColor === "bg-slate-100") btnClasses = "bg-slate-300 text-slate-500 opacity-60"; 
+              else if (actualColor === "bg-black") btnClasses = "bg-black text-red-500 font-black opacity-80 border-2 border-red-500"; 
             } else {
               if (userRole === "master") {
                 if (actualColor === "bg-blue-600") btnClasses = "bg-gradient-to-b from-[#3B82F6] to-[#2563EB] text-white shadow-md border-[#1E3A8A]";
                 else if (actualColor === "bg-red-600") btnClasses = "bg-gradient-to-b from-[#EF4444] to-[#DC2626] text-white shadow-md border-[#7F1D1D]";
-                else if (actualColor === "bg-stone-300") btnClasses = "bg-[#4C7D7E] text-[#F5F5DC] border-[#385F60] shadow-sm hover:bg-[#385F60]";
-                else if (actualColor === "bg-stone-800") btnClasses = "bg-gradient-to-b from-stone-800 to-black text-white shadow-md border-black";
+                else if (actualColor === "bg-slate-100") btnClasses = "bg-slate-100 text-slate-800 shadow-sm border-slate-300";
+                else if (actualColor === "bg-black") btnClasses = "bg-black text-white shadow-md border-slate-800";
               } else {
                 btnClasses = "bg-gradient-to-br from-[#ebf5ed] to-[#d6ebd9] text-stone-800 border-[#c2e0cd] hover:from-[#d6ebd9] hover:to-[#c2e0cd] shadow-sm";
               }
             }
+
+            // مؤثرات بصرية عند الترشيح
+            if (!isRevealed && wordNoms.length > 0) {
+              btnClasses += " border-2 border-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.6)] scale-[1.02] z-10";
+            }
+
             return (
-              <button key={index} onClick={() => handleWordClick(index)} className={`min-h-[55px] sm:min-h-[75px] border rounded-xl flex items-center justify-center transition-all relative ${btnClasses}`}>
+              <button key={index} onClick={() => handleWordClick(index)} className={`min-h-[55px] sm:min-h-[75px] rounded-xl flex items-center justify-center transition-all relative ${btnClasses}`}>
                 <span className="text-[9px] sm:text-sm font-black text-center px-0.5 leading-tight">{word}</span>
+                
+                {/* شارة إيموجيات المرشحين */}
+                {!isRevealed && wordNoms.length > 0 && (
+                  <div className="absolute -top-2 -right-2 flex gap-0.5">
+                    {wordNoms.map((nName, i) => {
+                      const p = roomPlayers.find(pl => pl.name === nName);
+                      return <span key={i} className="bg-slate-800 rounded-full text-[10px] sm:text-xs p-0.5 shadow-md border border-slate-600 z-20">{p ? p.emoji : '👤'}</span>;
+                    })}
+                  </div>
+                )}
+
+                {/* رسالة التأكيد للمرشح */}
+                {isNominatedByMe && !isRevealed && (
+                  <div className="absolute bottom-0 w-full bg-black/70 text-amber-300 text-[7px] sm:text-[9px] font-black py-0.5 sm:py-1 rounded-b-xl backdrop-blur-sm z-20">
+                    اضغط للتأكيد
+                  </div>
+                )}
               </button>
             );
           })}
@@ -633,7 +675,7 @@ export default function GameBoard() {
                     </div>
                   ))}
                   {userTeam === 'none' && !pinnedSpectators.includes(localPlayerId) && !isRoomLocked && (
-                    <button onClick={() => quickJoin('blue', 'master')} className="text-[8px] sm:text-[9px] bg-blue-900/40 border border-blue-800 text-blue-200 hover:bg-blue-700 px-2 py-1 rounded-lg transition-colors font-bold flex items-center shadow-sm">
+                    <button onClick={() => quickJoin('blue', 'master')} className="text-[8px] sm:text-[9px] bg-blue-900/40 border border-blue-800 text-blue-200 hover:bg-blue-700 px-2.5 py-1.5 rounded-lg transition-colors font-bold flex items-center shadow-sm relative z-10 cursor-pointer">
                       + انضمام
                     </button>
                   )}
@@ -652,7 +694,7 @@ export default function GameBoard() {
                     </div>
                   ))}
                   {userTeam === 'none' && !pinnedSpectators.includes(localPlayerId) && !isRoomLocked && (
-                    <button onClick={() => quickJoin('blue', 'decoder')} className="text-[8px] sm:text-[9px] bg-blue-900/40 border border-blue-800 text-blue-200 hover:bg-blue-700 px-2 py-1 rounded-lg transition-colors font-bold flex items-center shadow-sm">
+                    <button onClick={() => quickJoin('blue', 'decoder')} className="text-[8px] sm:text-[9px] bg-blue-900/40 border border-blue-800 text-blue-200 hover:bg-blue-700 px-2.5 py-1.5 rounded-lg transition-colors font-bold flex items-center shadow-sm relative z-10 cursor-pointer">
                       + انضمام
                     </button>
                   )}
@@ -680,7 +722,7 @@ export default function GameBoard() {
                     </div>
                   ))}
                   {userTeam === 'none' && !pinnedSpectators.includes(localPlayerId) && !isRoomLocked && (
-                    <button onClick={() => quickJoin('red', 'master')} className="text-[8px] sm:text-[9px] bg-red-900/40 border border-red-800 text-red-200 hover:bg-red-700 px-2 py-1 rounded-lg transition-colors font-bold flex items-center shadow-sm">
+                    <button onClick={() => quickJoin('red', 'master')} className="text-[8px] sm:text-[9px] bg-red-900/40 border border-red-800 text-red-200 hover:bg-red-700 px-2.5 py-1.5 rounded-lg transition-colors font-bold flex items-center shadow-sm relative z-10 cursor-pointer">
                       + انضمام
                     </button>
                   )}
@@ -699,7 +741,7 @@ export default function GameBoard() {
                     </div>
                   ))}
                   {userTeam === 'none' && !pinnedSpectators.includes(localPlayerId) && !isRoomLocked && (
-                    <button onClick={() => quickJoin('red', 'decoder')} className="text-[8px] sm:text-[9px] bg-red-900/40 border border-red-800 text-red-200 hover:bg-red-700 px-2 py-1 rounded-lg transition-colors font-bold flex items-center shadow-sm">
+                    <button onClick={() => quickJoin('red', 'decoder')} className="text-[8px] sm:text-[9px] bg-red-900/40 border border-red-800 text-red-200 hover:bg-red-700 px-2.5 py-1.5 rounded-lg transition-colors font-bold flex items-center shadow-sm relative z-10 cursor-pointer">
                       + انضمام
                     </button>
                   )}
@@ -740,7 +782,7 @@ export default function GameBoard() {
 
       </main>
 
-      {/* نافذة قائمة اللاعبين والمشاهدين (التي كانت مفقودة) */}
+      {/* نافذة قائمة اللاعبين والمشاهدين */}
       {isPlayersListOpen && (
         <div className="fixed inset-0 z-[5000] bg-[#020617]/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setIsPlayersListOpen(false)}>
           <div className="bg-slate-900 border border-slate-700 w-full max-w-md rounded-[2rem] p-6 shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
@@ -815,7 +857,7 @@ export default function GameBoard() {
         <div className="fixed inset-0 z-[2000] bg-[#020617]/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setIsEditModalOpen(false)}>
           <div className="bg-slate-900 border border-slate-700 w-full max-w-md rounded-[2rem] p-6 shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex justify-between items-center border-b border-slate-800 pb-3">
-              <h3 className="text-slate-100 font-black text-sm uppercase tracking-widest">إعدادات اللاعب ⚙️</h3>
+              <h3 className="text-slate-100 font-black text-sm uppercase tracking-widest">ملفي 👤</h3>
               <button onClick={() => setIsEditModalOpen(false)} className="text-slate-500 hover:text-white text-2xl font-bold">×</button>
             </div>
             <div className="space-y-4">
@@ -859,4 +901,4 @@ export default function GameBoard() {
       )}
     </div>
   );
-} 
+}
