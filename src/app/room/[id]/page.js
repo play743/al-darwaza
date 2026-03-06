@@ -40,7 +40,7 @@ export default function GameBoard() {
   const [userTeam, setUserTeam] = useState("none"); 
   const [userRole, setUserRole] = useState("spectator"); 
   const [isJoined, setIsJoined] = useState(false);
-  const [isJoiningUI, setIsJoiningUI] = useState(false); // حالة تحميل الدخول المباشر
+  const [isJoiningUI, setIsJoiningUI] = useState(false); 
 
   const [isPlayersListOpen, setIsPlayersListOpen] = useState(false); 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -104,7 +104,6 @@ export default function GameBoard() {
     return { ip, deviceData };
   };
 
-  // دالة الدخول (فصلناها عشان نستخدمها تلقائياً)
   const executeJoin = async (targetName) => {
     if (!targetName.trim() || !roomId) return;
     setIsJoiningUI(true);
@@ -165,7 +164,6 @@ export default function GameBoard() {
     if (isNewPlayer) addGameLog(`دخل ${targetName} كـ مشاهد 🍿`);
   };
 
-  // نظام الدخول التلقائي (Auto-Join)
   useEffect(() => {
     if (autoJoinAttempted.current || !roomId) return;
     const savedName = localStorage.getItem("darwaza_global_name");
@@ -173,15 +171,15 @@ export default function GameBoard() {
     if (savedName) {
       autoJoinAttempted.current = true;
       setUserName(savedName);
-      executeJoin(savedName); // دخول فوري بدون أسئلة!
+      executeJoin(savedName);
     } else {
-      autoJoinAttempted.current = true; // لو ما عنده اسم يطلّع له الفورم
+      autoJoinAttempted.current = true; 
     }
   }, [roomId]);
 
   const handleJoinSubmit = (e) => {
     e.preventDefault();
-    localStorage.setItem("darwaza_global_name", userName); // يحفظه للمستقبل
+    localStorage.setItem("darwaza_global_name", userName); 
     executeJoin(userName);
   };
 
@@ -389,8 +387,16 @@ export default function GameBoard() {
     setIsEditModalOpen(false);
   };
 
+  // نظام (Optimistic UI) لتحديث الإعدادات بدون تأخير
   const saveAdminSettings = async (newSettings) => {
     if (!isOwner) return;
+
+    // تحديث الواجهة فوراً للمالك بدون انتظار رد القاعدة
+    if (newSettings.is_locked !== undefined) setIsRoomLocked(newSettings.is_locked);
+    if (newSettings.allow_name_change !== undefined) setAllowNameChange(newSettings.allow_name_change);
+    if (newSettings.timer_duration !== undefined) setTimerDuration(newSettings.timer_duration);
+
+    // إرسال التحديث في الخلفية
     await supabase.from('rooms').update(newSettings).eq('id', roomId);
     addGameLog(`تم تعديل إعدادات الروم ⚙️`);
   };
@@ -460,6 +466,53 @@ export default function GameBoard() {
 
   const boardFaded = userRole === 'spectator' && isRoomLocked; 
 
+  // مكون بطاقة اللاعب داخل نافذة الأعضاء
+  const PlayerListGroup = ({ title, players, color }) => {
+    if (players.length === 0) return null;
+    const isSpectator = color === 'stone';
+    const bgClass = 'bg-slate-900 border-slate-800';
+    const textClass = 'text-slate-200';
+
+    return (
+      <div className="mb-4">
+        <h4 className={`text-[11px] font-black mb-2 ${textClass} uppercase px-1 border-b border-slate-700 pb-1`}>
+          {title} ({players.length})
+        </h4>
+        <div className="space-y-1.5">
+          {players.map((p, i) => (
+            <div key={i} className={`flex justify-between items-center p-2.5 rounded-xl border ${bgClass} shadow-sm`}>
+              <div className="flex items-center gap-2">
+                <span className="text-lg">{p.emoji}</span>
+                <span className="text-xs font-bold text-slate-200">
+                  {p.name} {p.name === userName && <span className="text-slate-400 font-bold">(أنت)</span>}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`text-[9px] px-2 py-1 rounded-md font-bold ${isSpectator ? 'bg-slate-800 border border-slate-700 text-slate-400' : p.role === 'master' ? 'bg-gradient-to-br from-[#203B3C] to-[#122223] text-[#F5F5DC]' : 'bg-[#4C7D7E] border border-[#385F60] text-[#F5F5DC]'}`}>
+                  {isSpectator ? '🍿 مشاهد' : p.role === 'master' ? '👑 مُشفر' : '🔍 مفكك'}
+                </span>
+                {isOwner && p.id !== localPlayerId && (
+                  <div className="flex gap-1">
+                    {!isSpectator && (
+                      <button onClick={() => kickPlayer(p.id)} className="bg-red-900/50 border border-red-800/50 text-red-300 text-[9px] px-2 py-1 rounded-md font-bold hover:bg-red-800 transition-colors">
+                        طرد للمشاهدين
+                      </button>
+                    )}
+                    {isSpectator && (
+                      <button onClick={() => togglePinPlayer(p.id)} className={`${pinnedSpectators.includes(p.id) ? 'bg-teal-900/50 border-teal-800/50 text-teal-300' : 'bg-slate-800 border-slate-700 text-slate-400'} text-[9px] px-2 py-1 rounded-md font-bold transition-colors`}>
+                        {pinnedSpectators.includes(p.id) ? '📌 مثبت' : '📌 تثبيت'}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
   if (!isJoined) {
     return (
       <div className="min-h-[80vh] flex items-center justify-center p-6 text-right relative" dir="rtl">
@@ -493,38 +546,45 @@ export default function GameBoard() {
 
       <div className="fixed top-0 left-0 w-screen h-screen bg-[#020617] z-[-1]"></div>
 
-      <main className="w-full max-w-4xl mx-auto flex flex-col items-center px-4 space-y-4">
+      <main className="w-full max-w-4xl mx-auto flex flex-col items-center px-2 sm:px-4 space-y-4">
         
         {userRole === "spectator" && (
-          <div onClick={openSettings} className="w-full max-w-2xl bg-slate-900 border border-slate-800 text-teal-400 p-2.5 rounded-xl flex justify-center items-center shadow-lg cursor-pointer transition-colors hover:bg-slate-800" style={{ animation: 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite' }}>
+          <div onClick={openSettings} className="w-full max-w-2xl bg-slate-900 border border-slate-800 text-teal-400 p-2.5 rounded-xl flex justify-center items-center shadow-lg cursor-pointer transition-colors hover:bg-slate-800 mx-2" style={{ animation: 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite' }}>
             <span className="text-[11px] font-black tracking-widest">أنت تشاهد الآن 🍿 (انقر هنا للعب 🎮)</span>
           </div>
         )}
 
-        <div className="flex justify-between items-center w-full max-w-2xl bg-slate-900 border border-slate-800 p-2.5 rounded-2xl shadow-sm">
-          <div className="flex items-center gap-2">
-            <span className="bg-slate-950 border border-slate-800 text-slate-500 px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest hidden sm:block">كود: {roomId}</span>
-            <div className={`px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase bg-transparent border border-slate-700 ${currentTurn === 'blue' ? 'text-blue-400' : 'text-red-400'}`}>
+        {/* شريط المهام المحدث للموبايل */}
+        <div className="w-full max-w-2xl bg-slate-900 border border-slate-800 p-3 rounded-2xl shadow-sm flex flex-wrap justify-between items-center gap-y-3 gap-x-2 mx-2">
+          
+          <div className="flex items-center gap-2 w-auto">
+             <div className={`px-2 sm:px-3 py-1.5 rounded-xl text-[9px] sm:text-[10px] font-bold uppercase bg-[#020617] border border-slate-800 ${currentTurn === 'blue' ? 'text-blue-400' : 'text-red-400'}`}>
               دور: <span className="font-black">{currentTurn === 'blue' ? 'الدهاة' : 'الجهابذة'}</span> {gamePhase === "hinting" ? "(يلمح)" : "(يخمن)"}
             </div>
-            <button onClick={() => setIsAdminModalOpen(true)} className="bg-gradient-to-br from-teal-600 to-teal-800 text-white px-3 py-1.5 rounded-xl text-[10px] font-bold shadow-sm hover:from-teal-500 hover:to-teal-700 transition-colors flex items-center gap-1">
-              إعدادات اللعبة ⚙️
-            </button>
+            {isOwner && (
+              <button onClick={() => setIsAdminModalOpen(true)} className="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2 sm:px-3 py-1.5 rounded-xl text-[9px] sm:text-[10px] font-bold shadow-sm transition-colors">
+                الإعدادات ⚙️
+              </button>
+            )}
           </div>
           
-          {timerDuration > 0 && <div className={`font-mono text-base font-black ${timeLeft !== null && timeLeft <= 10 ? 'text-[#FECACA] animate-pulse' : 'text-[#F5F5DC]'}`}>{timerEndsAt === null ? formatTime(timerDuration) : formatTime(timeLeft)}</div>}
+          {timerDuration > 0 && (
+            <div className={`font-mono text-lg sm:text-xl font-black order-first w-full text-center sm:order-none sm:w-auto ${timeLeft !== null && timeLeft <= 10 ? 'text-[#FECACA] animate-pulse' : 'text-[#F5F5DC]'}`}>
+              {timerEndsAt === null ? formatTime(timerDuration) : formatTime(timeLeft)}
+            </div>
+          )}
 
-          <div className="flex items-center gap-2">
-            <button onClick={() => setIsPlayersListOpen(true)} className="bg-gradient-to-br from-teal-600 to-teal-800 text-white text-[10px] font-bold px-3 py-1.5 rounded-xl shadow-sm hover:from-teal-500 hover:to-teal-700 transition-colors">
+          <div className="flex items-center gap-2 w-auto">
+            <button onClick={() => setIsPlayersListOpen(true)} className="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[9px] sm:text-[10px] font-bold px-3 py-1.5 rounded-xl shadow-sm transition-colors">
               👥 ({roomPlayers.filter(p => p.is_online).length})
             </button>
-            <button onClick={openSettings} className="bg-gradient-to-br from-teal-600 to-teal-800 text-white text-[10px] font-bold px-3 py-1.5 rounded-xl shadow-sm hover:from-teal-500 hover:to-teal-700 transition-colors">
-              ⚙️ إعداداتي
+            <button onClick={openSettings} className="bg-gradient-to-br from-teal-600 to-teal-800 text-white text-[9px] sm:text-[10px] font-bold px-3 py-1.5 rounded-xl shadow-sm hover:from-teal-500 hover:to-teal-700 transition-colors">
+              ملفي 👤
             </button>
           </div>
         </div>
 
-        <div className={`w-full max-w-2xl bg-[#4C7D7E] p-2.5 rounded-3xl shadow-lg grid grid-cols-5 gap-1.5 animated-gradient-board border border-slate-800 transition-all duration-500 ${boardFaded ? 'opacity-40 grayscale pointer-events-none' : ''}`}>
+        <div className={`w-full max-w-2xl bg-[#4C7D7E] p-2 sm:p-2.5 rounded-2xl sm:rounded-3xl shadow-lg grid grid-cols-5 gap-1.5 animated-gradient-board border border-slate-800 transition-all duration-500 mx-2 ${boardFaded ? 'opacity-40 grayscale pointer-events-none' : ''}`}>
           {currentWords.map((word, index) => {
             const isRevealed = revealedWords[index];
             const actualColor = wordColors[index];
@@ -545,58 +605,58 @@ export default function GameBoard() {
               }
             }
             return (
-              <button key={index} onClick={() => handleWordClick(index)} className={`min-h-[60px] sm:min-h-[75px] border rounded-xl flex items-center justify-center transition-all relative ${btnClasses}`}>
-                <span className="text-[10px] sm:text-sm font-black text-center px-1 leading-tight">{word}</span>
+              <button key={index} onClick={() => handleWordClick(index)} className={`min-h-[55px] sm:min-h-[75px] border rounded-xl flex items-center justify-center transition-all relative ${btnClasses}`}>
+                <span className="text-[9px] sm:text-sm font-black text-center px-0.5 leading-tight">{word}</span>
               </button>
             );
           })}
         </div>
 
-        {boardFaded && <div className="text-slate-300 text-xs font-bold bg-slate-900 border border-slate-800 px-4 py-2 rounded-xl">الروم مقفلة حالياً، يمكنك المشاهدة فقط 🍿</div>}
+        {boardFaded && <div className="text-slate-300 text-xs font-bold bg-slate-900 border border-slate-800 px-4 py-2 rounded-xl mx-2">الروم مقفلة حالياً، يمكنك المشاهدة فقط 🍿</div>}
 
-        <div className="w-full max-w-2xl grid grid-cols-2 gap-4">
+        <div className="w-full max-w-2xl grid grid-cols-2 gap-3 mx-2 px-2">
           <div className="bg-[#0f172a]/80 border border-blue-900/60 rounded-2xl p-3 flex flex-col shadow-sm">
             <div className="flex justify-between items-center mb-3 px-1">
               <span className="text-[#BAE6FD] font-black text-sm uppercase tracking-widest">الدهاة</span>
-              <span className="text-[#F5F5DC] font-black text-2xl bg-[#4C7D7E] border border-[#385F60] shadow-sm px-3 py-0.5 rounded-lg">{blueScore}</span>
+              <span className="text-[#F5F5DC] font-black text-xl sm:text-2xl bg-[#4C7D7E] border border-[#385F60] shadow-sm px-3 py-0.5 rounded-lg">{blueScore}</span>
             </div>
             <div className="flex flex-col gap-2 w-full">
               <div className="flex items-stretch gap-2">
-                <div className="text-[9px] font-black text-[#BAE6FD] shrink-0 w-[80px] flex items-center justify-start">
+                <div className="text-[9px] font-black text-[#BAE6FD] shrink-0 w-[70px] sm:w-[80px] flex items-center justify-start">
                   {blueMasters.length > 1 ? 'المُشفرين 👑' : 'المُشفر 👑'}
                 </div>
-                <div className="w-[1px] self-stretch bg-[#385F60] mx-1"></div>
+                <div className="w-[1px] self-stretch bg-[#385F60] mx-0.5"></div>
                 <div className="flex flex-wrap gap-1.5 justify-start flex-1 py-0.5">
                   {blueMasters.map((p, i) => (
                     <div key={i} className="flex items-center gap-1.5 bg-gradient-to-br from-[#203B3C] to-[#122223] text-[#F5F5DC] px-2 py-1 rounded-lg shadow-sm border border-[#15292A]">
-                      <span className="text-[10px] font-bold">{p.name}</span><span className="text-xs">{p.emoji}</span>
+                      <span className="text-[9px] sm:text-[10px] font-bold">{p.name}</span><span className="text-[10px] sm:text-xs">{p.emoji}</span>
                     </div>
                   ))}
                   {userTeam === 'none' && !pinnedSpectators.includes(localPlayerId) && !isRoomLocked && (
-                    <button onClick={() => quickJoin('blue', 'master')} className="text-[9px] bg-blue-900/40 border border-blue-800 text-blue-200 hover:bg-blue-700 px-2 py-1 rounded-lg transition-colors font-bold flex items-center shadow-sm">
+                    <button onClick={() => quickJoin('blue', 'master')} className="text-[8px] sm:text-[9px] bg-blue-900/40 border border-blue-800 text-blue-200 hover:bg-blue-700 px-2 py-1 rounded-lg transition-colors font-bold flex items-center shadow-sm">
                       + انضمام
                     </button>
                   )}
-                  {blueMasters.length === 0 && userTeam !== 'none' && <span className="text-[9px] text-[#F5F5DC]/60 font-bold italic my-auto">بانتظار القائد...</span>}
+                  {blueMasters.length === 0 && userTeam !== 'none' && <span className="text-[8px] sm:text-[9px] text-[#F5F5DC]/60 font-bold italic my-auto">بانتظار القائد...</span>}
                 </div>
               </div>
               <div className="flex items-stretch gap-2">
-                <div className="text-[9px] font-black text-[#BAE6FD] shrink-0 w-[80px] flex items-center justify-start">
+                <div className="text-[9px] font-black text-[#BAE6FD] shrink-0 w-[70px] sm:w-[80px] flex items-center justify-start">
                   {blueDecoders.length > 1 ? 'مفككين الشفرات 🔍' : 'مفكك الشفرة 🔍'}
                 </div>
-                <div className="w-[1px] self-stretch bg-[#385F60] mx-1"></div>
+                <div className="w-[1px] self-stretch bg-[#385F60] mx-0.5"></div>
                 <div className="flex flex-wrap gap-1.5 justify-start flex-1 py-0.5">
                   {blueDecoders.map((p, i) => (
                     <div key={i} className="flex items-center gap-1.5 bg-gradient-to-br from-[#203B3C] to-[#122223] text-[#F5F5DC] px-2 py-1 rounded-lg shadow-sm border border-[#15292A]">
-                      <span className="text-[10px] font-bold">{p.name}</span><span className="text-xs">{p.emoji}</span>
+                      <span className="text-[9px] sm:text-[10px] font-bold">{p.name}</span><span className="text-[10px] sm:text-xs">{p.emoji}</span>
                     </div>
                   ))}
                   {userTeam === 'none' && !pinnedSpectators.includes(localPlayerId) && !isRoomLocked && (
-                    <button onClick={() => quickJoin('blue', 'decoder')} className="text-[9px] bg-blue-900/40 border border-blue-800 text-blue-200 hover:bg-blue-700 px-2 py-1 rounded-lg transition-colors font-bold flex items-center shadow-sm">
+                    <button onClick={() => quickJoin('blue', 'decoder')} className="text-[8px] sm:text-[9px] bg-blue-900/40 border border-blue-800 text-blue-200 hover:bg-blue-700 px-2 py-1 rounded-lg transition-colors font-bold flex items-center shadow-sm">
                       + انضمام
                     </button>
                   )}
-                  {blueDecoders.length === 0 && userTeam !== 'none' && <span className="text-[9px] text-[#F5F5DC]/60 font-bold italic my-auto">لا يوجد لاعبين</span>}
+                  {blueDecoders.length === 0 && userTeam !== 'none' && <span className="text-[8px] sm:text-[9px] text-[#F5F5DC]/60 font-bold italic my-auto">لا يوجد لاعبين</span>}
                 </div>
               </div>
             </div>
@@ -605,45 +665,45 @@ export default function GameBoard() {
           <div className="bg-[#0f172a]/80 border border-red-900/60 rounded-2xl p-3 flex flex-col shadow-sm">
             <div className="flex justify-between items-center mb-3 px-1">
               <span className="text-[#FECACA] font-black text-sm uppercase tracking-widest">الجهابذة</span>
-              <span className="text-[#F5F5DC] font-black text-2xl bg-[#4C7D7E] border border-[#385F60] shadow-sm px-3 py-0.5 rounded-lg">{redScore}</span>
+              <span className="text-[#F5F5DC] font-black text-xl sm:text-2xl bg-[#4C7D7E] border border-[#385F60] shadow-sm px-3 py-0.5 rounded-lg">{redScore}</span>
             </div>
             <div className="flex flex-col gap-2 w-full">
               <div className="flex items-stretch gap-2">
-                <div className="text-[9px] font-black text-[#FECACA] shrink-0 w-[80px] flex items-center justify-start">
+                <div className="text-[9px] font-black text-[#FECACA] shrink-0 w-[70px] sm:w-[80px] flex items-center justify-start">
                   {redMasters.length > 1 ? 'المُشفرين 👑' : 'المُشفر 👑'}
                 </div>
-                <div className="w-[1px] self-stretch bg-[#385F60] mx-1"></div>
+                <div className="w-[1px] self-stretch bg-[#385F60] mx-0.5"></div>
                 <div className="flex flex-wrap gap-1.5 justify-start flex-1 py-0.5">
                   {redMasters.map((p, i) => (
                     <div key={i} className="flex items-center gap-1.5 bg-gradient-to-br from-[#203B3C] to-[#122223] text-[#F5F5DC] px-2 py-1 rounded-lg shadow-sm border border-[#15292A]">
-                      <span className="text-[10px] font-bold">{p.name}</span><span className="text-xs">{p.emoji}</span>
+                      <span className="text-[9px] sm:text-[10px] font-bold">{p.name}</span><span className="text-[10px] sm:text-xs">{p.emoji}</span>
                     </div>
                   ))}
                   {userTeam === 'none' && !pinnedSpectators.includes(localPlayerId) && !isRoomLocked && (
-                    <button onClick={() => quickJoin('red', 'master')} className="text-[9px] bg-red-900/40 border border-red-800 text-red-200 hover:bg-red-700 px-2 py-1 rounded-lg transition-colors font-bold flex items-center shadow-sm">
+                    <button onClick={() => quickJoin('red', 'master')} className="text-[8px] sm:text-[9px] bg-red-900/40 border border-red-800 text-red-200 hover:bg-red-700 px-2 py-1 rounded-lg transition-colors font-bold flex items-center shadow-sm">
                       + انضمام
                     </button>
                   )}
-                  {redMasters.length === 0 && userTeam !== 'none' && <span className="text-[9px] text-[#F5F5DC]/60 font-bold italic my-auto">بانتظار القائد...</span>}
+                  {redMasters.length === 0 && userTeam !== 'none' && <span className="text-[8px] sm:text-[9px] text-[#F5F5DC]/60 font-bold italic my-auto">بانتظار القائد...</span>}
                 </div>
               </div>
               <div className="flex items-stretch gap-2">
-                <div className="text-[9px] font-black text-[#FECACA] shrink-0 w-[80px] flex items-center justify-start">
+                <div className="text-[9px] font-black text-[#FECACA] shrink-0 w-[70px] sm:w-[80px] flex items-center justify-start">
                   {redDecoders.length > 1 ? 'مفككين الشفرات 🔍' : 'مفكك الشفرة 🔍'}
                 </div>
-                <div className="w-[1px] self-stretch bg-[#385F60] mx-1"></div>
+                <div className="w-[1px] self-stretch bg-[#385F60] mx-0.5"></div>
                 <div className="flex flex-wrap gap-1.5 justify-start flex-1 py-0.5">
                   {redDecoders.map((p, i) => (
                     <div key={i} className="flex items-center gap-1.5 bg-gradient-to-br from-[#203B3C] to-[#122223] text-[#F5F5DC] px-2 py-1 rounded-lg shadow-sm border border-[#15292A]">
-                      <span className="text-[10px] font-bold">{p.name}</span><span className="text-xs">{p.emoji}</span>
+                      <span className="text-[9px] sm:text-[10px] font-bold">{p.name}</span><span className="text-[10px] sm:text-xs">{p.emoji}</span>
                     </div>
                   ))}
                   {userTeam === 'none' && !pinnedSpectators.includes(localPlayerId) && !isRoomLocked && (
-                    <button onClick={() => quickJoin('red', 'decoder')} className="text-[9px] bg-red-900/40 border border-red-800 text-red-200 hover:bg-red-700 px-2 py-1 rounded-lg transition-colors font-bold flex items-center shadow-sm">
+                    <button onClick={() => quickJoin('red', 'decoder')} className="text-[8px] sm:text-[9px] bg-red-900/40 border border-red-800 text-red-200 hover:bg-red-700 px-2 py-1 rounded-lg transition-colors font-bold flex items-center shadow-sm">
                       + انضمام
                     </button>
                   )}
-                  {redDecoders.length === 0 && userTeam !== 'none' && <span className="text-[9px] text-[#F5F5DC]/60 font-bold italic my-auto">لا يوجد لاعبين</span>}
+                  {redDecoders.length === 0 && userTeam !== 'none' && <span className="text-[8px] sm:text-[9px] text-[#F5F5DC]/60 font-bold italic my-auto">لا يوجد لاعبين</span>}
                 </div>
               </div>
             </div>
@@ -651,7 +711,7 @@ export default function GameBoard() {
         </div>
 
         {userRole !== "spectator" && (
-          <div className="w-full max-w-2xl">
+          <div className="w-full max-w-2xl px-2">
             {gamePhase === "hinting" ? (
               userRole === "master" && userTeam === currentTurn && (
                 <div className="flex gap-2 bg-slate-900 p-2.5 rounded-2xl border border-slate-800 shadow-sm">
@@ -666,7 +726,7 @@ export default function GameBoard() {
           </div>
         )}
 
-        <div className="w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm h-36 overflow-y-auto" ref={scrollRef}>
+        <div className="w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm h-36 overflow-y-auto mx-2" ref={scrollRef}>
           <h4 className="text-[9px] font-bold text-slate-500 mb-3 uppercase tracking-widest border-b border-slate-800 pb-1.5">مجريات اللعبة 📜</h4>
           <div className="space-y-1.5">
             {gameLogs.map((log, i) => (
@@ -680,6 +740,24 @@ export default function GameBoard() {
 
       </main>
 
+      {/* نافذة قائمة اللاعبين والمشاهدين (التي كانت مفقودة) */}
+      {isPlayersListOpen && (
+        <div className="fixed inset-0 z-[5000] bg-[#020617]/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setIsPlayersListOpen(false)}>
+          <div className="bg-slate-900 border border-slate-700 w-full max-w-md rounded-[2rem] p-6 shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+              <h3 className="text-slate-100 font-black text-sm uppercase tracking-widest">الأعضاء والمشاهدين 👥</h3>
+              <button onClick={() => setIsPlayersListOpen(false)} className="text-slate-500 hover:text-white text-2xl font-bold">×</button>
+            </div>
+            <div className="space-y-2">
+              <PlayerListGroup title="الدهاة 🔵" players={bluePlayers} color="blue" />
+              <PlayerListGroup title="الجهابذة 🔴" players={redPlayers} color="red" />
+              <PlayerListGroup title="المشاهدين 🍿" players={spectatorPlayers} color="stone" />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* نافذة إعدادات اللعبة */}
       {isAdminModalOpen && (
         <div className="fixed inset-0 z-[3000] bg-[#020617]/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setIsAdminModalOpen(false)}>
           <div className="bg-slate-900 border border-slate-700 w-full max-w-md rounded-[2rem] p-6 shadow-2xl flex flex-col gap-5 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
@@ -781,4 +859,4 @@ export default function GameBoard() {
       )}
     </div>
   );
-}
+} 
