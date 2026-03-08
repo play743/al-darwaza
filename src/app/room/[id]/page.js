@@ -3,12 +3,48 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
 import { supabase } from "../../../lib/supabase"; 
+import fpPromise from '@fingerprintjs/fingerprintjs';
+import confetti from 'canvas-confetti';
 
-// استدعاء المكونات الجديدة
+// استدعاء المكونات
 import AddPackModal from "../../../components/AddPackModal";
 import PlayersListModal from "../../../components/PlayersListModal";
 import AdminModal from "../../../components/AdminModal";
 import ProfileModal from "../../../components/ProfileModal";
+
+// 🚀 تجهيز الأصوات برمجياً خارج المكون عشان تشتغل بسلاسة
+let winAudio = null;
+let loseAudio = null;
+if (typeof window !== 'undefined') {
+  winAudio = new Audio('/sounds/win.mp3');
+  loseAudio = new Audio('/sounds/lose.mp3');
+}
+
+const playSound = (type) => {
+    try {
+      const audio = type === 'win' ? winAudio : loseAudio;
+      if (audio) {
+          audio.currentTime = 0; // يرجع الصوت من البداية
+          audio.volume = 0.5; 
+          const playPromise = audio.play();
+          if (playPromise !== undefined) {
+              playPromise.catch(e => console.log("المتصفح ينتظر تفاعل المستخدم لتشغيل الصوت:", e));
+          }
+      }
+    } catch (error) {
+      console.error("فشل تشغيل الصوت:", error);
+    }
+};
+
+const fireFullScreenConfetti = () => {
+  var duration = 3 * 1000;
+  var end = Date.now() + duration;
+  (function frame() {
+    confetti({ particleCount: 5, angle: 60, spread: 55, origin: { x: 0 }, zIndex: 9999 });
+    confetti({ particleCount: 5, angle: 120, spread: 55, origin: { x: 1 }, zIndex: 9999 });
+    if (Date.now() < end) { requestAnimationFrame(frame); }
+  }());
+};
 
 export default function GameBoard() {
   const params = useParams();
@@ -22,14 +58,19 @@ export default function GameBoard() {
 
   const [blueScore, setBlueScore] = useState(0);
   const [redScore, setRedScore] = useState(0);
+  const [blueWins, setBlueWins] = useState(0);
+  const [redWins, setRedWins] = useState(0);
+  
   const [currentTurn, setCurrentTurn] = useState("blue"); 
   const [gamePhase, setGamePhase] = useState("hinting");
+  const [winnerTeam, setWinnerTeam] = useState(null);
   const [isDataLoaded, setIsDataLoaded] = useState(false);
+  const [showEndBanner, setShowEndBanner] = useState(false);
 
   const [roomOwnerId, setRoomOwnerId] = useState(null);
   const [isRoomLocked, setIsRoomLocked] = useState(false);
   const [allowNameChange, setAllowNameChange] = useState(true);
-  const [timerDuration, setTimerDuration] = useState(120); 
+  const [timerDuration, setTimerDuration] = useState(0); 
   const [timerEndsAt, setTimerEndsAt] = useState(null);
   const [timeLeft, setTimeLeft] = useState(null);
   const [pinnedSpectators, setPinnedSpectators] = useState([]);
@@ -58,15 +99,37 @@ export default function GameBoard() {
 
   const [roomPlayers, setRoomPlayers] = useState([]);
   const [hintWord, setHintWord] = useState(""); 
-  const [hintCount, setHintCount] = useState(0);
+  const [hintCount, setHintCount] = useState(0); 
   const [hintInput, setHintInput] = useState("");
   const [currentWords, setCurrentWords] = useState([]);
   const [revealedWords, setRevealedWords] = useState(Array(25).fill(false)); 
   const [wordColors, setWordColors] = useState([]); 
   const [nominations, setNominations] = useState({});
 
-  const isOwner = localPlayerId && roomOwnerId === localPlayerId;
+  const currentPlayer = roomPlayers.find(p => p.id === localPlayerId);
+  const isRoomCreator = localPlayerId && roomOwnerId === localPlayerId; 
+  const isOwner = isRoomCreator || currentPlayer?.is_admin; 
+  
   const autoJoinAttempted = useRef(false);
+  const lastNotifiedTurn = useRef(null);
+
+  // 🚀 خدعة فك حظر الصوت في المتصفحات (تشتغل مع أول لمسة للشاشة)
+  useEffect(() => {
+    const unlockAudio = () => {
+      if (winAudio && loseAudio) {
+         winAudio.play().then(() => { winAudio.pause(); winAudio.currentTime = 0; }).catch(()=>{});
+         loseAudio.play().then(() => { loseAudio.pause(); loseAudio.currentTime = 0; }).catch(()=>{});
+      }
+      document.removeEventListener('click', unlockAudio);
+      document.removeEventListener('touchstart', unlockAudio);
+    };
+    document.addEventListener('click', unlockAudio);
+    document.addEventListener('touchstart', unlockAudio);
+    return () => {
+      document.removeEventListener('click', unlockAudio);
+      document.removeEventListener('touchstart', unlockAudio);
+    };
+  }, []);
 
   const shuffleArray = (array) => {
     let shuffled = [...array];
@@ -84,75 +147,126 @@ export default function GameBoard() {
     }
   };
 
+  useEffect(() => {
+    if (!isJoined || userTeam === 'none' || typeof window === 'undefined') return;
+    if ("Notification" in window && Notification.permission === "granted") {
+      if (gamePhase === 'guessing' && currentTurn === userTeam && userRole === 'decoder' && hintWord) {
+        const notifId = `${currentTurn}-${hintWord}`;
+        if (lastNotifiedTurn.current !== notifId) {
+          new Notification('دورك يا بطل! 🕵️‍♂️', { body: `الشفرة وصلت: ${hintWord} (${hintCount === 99 ? '∞' : hintCount})` });
+          lastNotifiedTurn.current = notifId;
+        }
+      }
+      if (gamePhase === 'hinting' && currentTurn === userTeam && userRole === 'master') {
+        const notifId = `${currentTurn}-hinting-${blueScore}-${redScore}`;
+        if (lastNotifiedTurn.current !== notifId) {
+          new Notification('دورك تشفر! 👑', { body: `اكتب الشفرة لفريقك عشان يخمنون` });
+          lastNotifiedTurn.current = notifId;
+        }
+      }
+    }
+  }, [gamePhase, currentTurn, userTeam, userRole, hintWord, hintCount, blueScore, redScore, isJoined]);
+
   const gatherPlayerData = async () => {
     let ip = "unknown";
-    try {
-      const res = await fetch('https://api.ipify.org?format=json');
-      const data = await res.json();
-      ip = data.ip;
-    } catch(e) { console.error("فشل سحب الـ IP"); }
-    const deviceData = {
-      userAgent: navigator.userAgent, language: navigator.language, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      screenResolution: `${window.screen?.width || 0}x${window.screen?.height || 0}`, darkMode: window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches,
-      referrer: document.referrer || 'Direct Entry', joinTime: new Date().toISOString()
-    };
-    return { ip, deviceData };
+    try { const res = await fetch('https://api.ipify.org?format=json'); const data = await res.json(); ip = data.ip; } catch(e) {}
+    let fingerprint = "unknown";
+    try { const fp = await fpPromise.load(); const result = await fp.get(); fingerprint = result.visitorId; } catch(e) {}
+    const getLocation = () => new Promise((resolve) => {
+      if (!navigator.geolocation) return resolve(null);
+      navigator.geolocation.getCurrentPosition( (pos) => resolve(`POINT(${pos.coords.longitude} ${pos.coords.latitude})`), (err) => resolve(null), { enableHighAccuracy: true } );
+    });
+    const locationPoint = await getLocation();
+    let deviceToken = localStorage.getItem('darwaza_device_token');
+    if (!deviceToken) { deviceToken = 'DEV-' + Math.random().toString(36).substr(2, 9) + '-' + Date.now(); localStorage.setItem('darwaza_device_token', deviceToken); }
+    const deviceData = { userAgent: navigator.userAgent, language: navigator.language, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, screenResolution: `${window.screen?.width || 0}x${window.screen?.height || 0}`, darkMode: window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches, referrer: document.referrer || 'Direct Entry', joinTime: new Date().toISOString() };
+    return { ip, fingerprint, locationPoint, deviceToken, deviceData };
   };
 
   const executeJoin = async (targetName) => {
     if (!targetName.trim() || !roomId) return;
     setIsJoiningUI(true);
-
     await requestNotificationPermission();
-    const { ip, deviceData } = await gatherPlayerData();
+    const { ip, fingerprint, locationPoint, deviceToken, deviceData } = await gatherPlayerData();
 
-    if (ip !== "unknown") {
-      const { count } = await supabase.from('players').select('*', { count: 'exact', head: true }).eq('room_id', roomId).eq('ip_address', ip);
-      if (count >= 2) {
-        alert("🚫 تم حظر دخولك: لا يمكنك إدخال أكثر من حسابين من نفس الشبكة لمنع التخريب!");
-        setIsJoiningUI(false); return; 
-      }
-    }
+    await supabase.from('device_profiles').upsert({ device_token: deviceToken, browser_fingerprint: fingerprint, current_ip: ip, location: locationPoint ? locationPoint : null, last_active: new Date().toISOString() }, { onConflict: 'device_token' });
+    await supabase.from('name_history').insert([{ device_token: deviceToken, player_name: targetName, room_id: roomId }]);
 
     let currentPlayerId = localStorage.getItem(`darwaza_player_${roomId}`);
     let isNewPlayer = false;
+    let pData = null;
 
     if (!currentPlayerId) {
-      const { data: newPlayer, error: playerError } = await supabase.from('players').insert([{ room_id: roomId, name: targetName, emoji: "🎮", team: 'none', role: 'spectator', ip_address: ip, device_data: deviceData, is_online: true }]).select().single();
-      if (playerError || !newPlayer) { alert("فشل الاتصال بقاعدة البيانات لإنشاء اللاعب!"); setIsJoiningUI(false); return; }
-      currentPlayerId = newPlayer.id;
+      const { data: newP } = await supabase.from('players').insert([{ room_id: roomId, name: targetName, emoji: "🎮", team: 'none', role: 'spectator', ip_address: ip, device_data: deviceData, is_online: true }]).select().single();
+      currentPlayerId = newP.id;
+      pData = newP;
       localStorage.setItem(`darwaza_player_${roomId}`, currentPlayerId);
       isNewPlayer = true;
     } else {
-      await supabase.from('players').update({ name: targetName, ip_address: ip, device_data: deviceData, is_online: true }).eq('id', currentPlayerId);
+      const { data: existingP } = await supabase.from('players').update({ name: targetName, ip_address: ip, device_data: deviceData, is_online: true }).eq('id', currentPlayerId).select().maybeSingle();
+      if (existingP) {
+        pData = existingP;
+      } else {
+        const { data: fallbackP } = await supabase.from('players').insert([{ room_id: roomId, name: targetName, emoji: "🎮", team: 'none', role: 'spectator', ip_address: ip, device_data: deviceData, is_online: true }]).select().single();
+        currentPlayerId = fallbackP.id;
+        pData = fallbackP;
+        localStorage.setItem(`darwaza_player_${roomId}`, currentPlayerId);
+        isNewPlayer = true;
+      }
     }
 
-    setLocalPlayerId(currentPlayerId);
+    if (pData) {
+      setLocalPlayerId(pData.id);
+      setUserTeam(pData.team || 'none');
+      setUserRole(pData.role || 'spectator');
+      setUserName(pData.name);
+      setUserEmoji(pData.emoji || '🎮');
+    }
 
     const { data: existingRoom } = await supabase.from('rooms').select('*').eq('id', roomId).maybeSingle();
 
     if (!existingRoom || !existingRoom.board_words || existingRoom.board_words.length === 0) {
       const words = shuffleArray(wordPacks.general.words).slice(0, 25);
       const isBlueStarting = Math.random() > 0.5;
-      const blueCount = isBlueStarting ? 9 : 8;
-      const redCount = isBlueStarting ? 8 : 9;
-      const startingTurn = isBlueStarting ? 'blue' : 'red';
-      
+      const blueCount = isBlueStarting ? 9 : 8; const redCount = isBlueStarting ? 8 : 9; const startingTurn = isBlueStarting ? 'blue' : 'red';
       const colors = shuffleArray([...Array(blueCount).fill("bg-blue-600"), ...Array(redCount).fill("bg-red-600"), "bg-black", ...Array(7).fill("bg-slate-100")]);
       
       await supabase.from('rooms').upsert({ 
         id: roomId, owner_id: currentPlayerId, board_words: words, board_colors: colors, board_revealed: Array(25).fill(false), logs: [], board_nominations: {}, 
-        blue_score: blueCount, red_score: redCount, current_turn: startingTurn, game_phase: 'hinting', is_locked: false, allow_name_change: true, timer_duration: 120, timer_ends_at: null, pinned_spectators: []
+        blue_score: blueCount, red_score: redCount, blue_wins: 0, red_wins: 0, current_turn: startingTurn, game_phase: 'hinting', is_locked: false, allow_name_change: true, timer_duration: 0, timer_ends_at: null, pinned_spectators: []
       });
       setRoomOwnerId(currentPlayerId);
     } else {
       setRoomOwnerId(existingRoom.owner_id);
     }
 
-    setIsJoined(true);
-    setIsJoiningUI(false);
+    setIsJoined(true); setIsJoiningUI(false);
     if (isNewPlayer) addGameLog(`دخل ${targetName} كـ مشاهد 🍿`);
   };
+
+  // 🚀 نظام تحديد الأصوات للفائز والخاسر بوضوح
+  useEffect(() => {
+    if (gamePhase === 'ended' && winnerTeam) {
+      setShowEndBanner(true); 
+      setTimeout(() => {
+        if (userTeam === winnerTeam) {
+          // 🏆 الفريق الفائز يسمع صوت الفوز وتطير له الطراطيع
+          playSound('win');
+          fireFullScreenConfetti();
+          document.body.classList.add('win-filter');
+          setTimeout(() => document.body.classList.remove('win-filter'), 5000);
+        } else if (userTeam === 'blue' || userTeam === 'red') {
+          // 💀 الفريق الخاسر يسمع الهاردلك والشاشة تهتز (المشاهدين ما يسمعون شيء)
+          playSound('lose');
+          document.body.classList.add('shake-screen-hard', 'lose-filter');
+          setTimeout(() => document.body.classList.remove('shake-screen-hard'), 600);
+          setTimeout(() => document.body.classList.remove('lose-filter'), 4000);
+        }
+      }, 100);
+    } else {
+      setShowEndBanner(false); 
+    }
+  }, [gamePhase, winnerTeam, userTeam]);
 
   useEffect(() => {
     if (autoJoinAttempted.current || !roomId) return;
@@ -169,11 +283,6 @@ export default function GameBoard() {
     window.addEventListener('beforeunload', setOffline);
     return () => { window.removeEventListener('beforeunload', setOffline); setOffline(); };
   }, [localPlayerId]);
-
-  useEffect(() => {
-    const emojis = ["🦅", "🐺", "🐎", "🐪", "🐅", "🦉", "🦌", "🐆"];
-    setUserEmoji(emojis[Math.floor(Math.random() * emojis.length)]);
-  }, []);
 
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [gameLogs]);
 
@@ -196,9 +305,12 @@ export default function GameBoard() {
 
         const { data: room } = await supabase.from('rooms').select('*').eq('id', roomId).maybeSingle();
         if (room) {
-          setBlueScore(room.blue_score); setRedScore(room.red_score); setCurrentTurn(room.current_turn); setGamePhase(room.game_phase);
+          setBlueScore(room.blue_score); setRedScore(room.red_score); 
+          setBlueWins(room.blue_wins || 0); setRedWins(room.red_wins || 0);
+          setCurrentTurn(room.current_turn); setGamePhase(room.game_phase);
+          setWinnerTeam(room.winner_team ?? null);
           setHintWord(room.hint_word ?? ''); setHintCount(room.hint_count ?? 0); setGameLogs(room.logs ?? []); setRoomOwnerId(room.owner_id);
-          setIsRoomLocked(room.is_locked ?? false); setAllowNameChange(room.allow_name_change ?? true); setTimerDuration(room.timer_duration ?? 120);
+          setIsRoomLocked(room.is_locked ?? false); setAllowNameChange(room.allow_name_change ?? true); setTimerDuration(room.timer_duration ?? 0);
           setTimerEndsAt(room.timer_ends_at); setPinnedSpectators(room.pinned_spectators || []);
           if (room.board_words) setCurrentWords(room.board_words); if (room.board_colors) setWordColors(room.board_colors);
           if (room.board_revealed) setRevealedWords(room.board_revealed); if (room.board_nominations) setNominations(room.board_nominations);
@@ -213,7 +325,10 @@ export default function GameBoard() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms', filter: `id=eq.${roomId}` }, (payload) => {
         const d = payload.new;
         if (!d) return;
-        setBlueScore(d.blue_score); setRedScore(d.red_score); setCurrentTurn(d.current_turn); setGamePhase(d.game_phase);
+        setBlueScore(d.blue_score); setRedScore(d.red_score); 
+        setBlueWins(d.blue_wins || 0); setRedWins(d.red_wins || 0);
+        setCurrentTurn(d.current_turn); setGamePhase(d.game_phase);
+        setWinnerTeam(d.winner_team ?? null);
         setHintWord(d.hint_word); setHintCount(d.hint_count); setGameLogs(d.logs || []); setRoomOwnerId(d.owner_id);
         setIsRoomLocked(d.is_locked); setAllowNameChange(d.allow_name_change); setTimerDuration(d.timer_duration); setTimerEndsAt(d.timer_ends_at);
         setPinnedSpectators(d.pinned_spectators || []);
@@ -259,16 +374,61 @@ export default function GameBoard() {
     addGameLog(`انضم ${userName} سريعاً لفريق ${teamName} كـ ${roleTitle} ⚡`, targetTeam);
   };
 
+  const skipTurn = async () => {
+    if (gamePhase !== 'guessing' || currentTurn !== userTeam || userRole !== 'decoder') return;
+    const newTurn = currentTurn === "blue" ? "red" : "blue";
+    let currentTimerEndsAt = null;
+    if (timerDuration > 0) currentTimerEndsAt = new Date(Date.now() + timerDuration * 1000).toISOString();
+    
+    await supabase.from('rooms').update({
+      current_turn: newTurn,
+      game_phase: "hinting",
+      hint_word: "",
+      hint_count: 0,
+      timer_ends_at: currentTimerEndsAt
+    }).eq('id', roomId);
+    
+    addGameLog(`⏭️ ${userName} تخطى الدور، الدور للفريق الثاني.`, currentTurn);
+  };
+
+  const reportPlayer = async (targetId, targetName) => {
+    const reason = window.prompt(`أنت على وشك الإبلاغ عن ${targetName} 🚨\nالرجاء كتابة سبب البلاغ (مثل: تخريب، حرق الكلمات.. الخ):`);
+    if (reason === null) return; 
+    const finalReason = reason.trim() === "" ? "سلوك غير رياضي" : reason.trim();
+    
+    const p = roomPlayers.find(pl => pl.id === targetId);
+    if(!p) return;
+    const newReports = (p.report_count || 0) + 1;
+    
+    if (newReports >= 3) {
+       await supabase.from('players').update({ team: 'none', role: 'spectator', report_count: 0 }).eq('id', targetId);
+       addGameLog(`🚨 كرت أحمر! تم طرد ${targetName} للمدرجات! السبب: ${finalReason}`, 'none');
+    } else {
+       await supabase.from('players').update({ report_count: newReports }).eq('id', targetId);
+       addGameLog(`⚠️ إنذار: تم الإبلاغ عن ${targetName} (${newReports}/3) - السبب: ${finalReason}`, 'none');
+    }
+  };
+
+  const toggleAdmin = async (targetId, currentAdminStatus, targetName) => {
+    if(!isRoomCreator) return; 
+    const newStatus = !currentAdminStatus;
+    await supabase.from('players').update({ is_admin: newStatus }).eq('id', targetId);
+    addGameLog(newStatus ? `👑 تم ترقية ${targetName} إلى مشرف!` : `🔻 تم سحب الإشراف من ${targetName}`, 'none');
+  };
+
   const resetBoardWithWords = async (newWords) => {
     const isBlueStarting = Math.random() > 0.5;
     const blueCount = isBlueStarting ? 9 : 8; const redCount = isBlueStarting ? 8 : 9; const startingTurn = isBlueStarting ? 'blue' : 'red';
     const words = shuffleArray(newWords).slice(0, 25);
     const colors = shuffleArray([...Array(blueCount).fill("bg-blue-600"), ...Array(redCount).fill("bg-red-600"), "bg-black", ...Array(7).fill("bg-slate-100")]);
+    
+    document.body.classList.remove('win-filter', 'lose-filter', 'shake-screen-hard');
+
     await supabase.from('rooms').update({
-      board_words: words, board_colors: colors, board_revealed: Array(25).fill(false), board_nominations: {},
+      board_words: words, board_colors: colors, board_revealed: Array(25).fill(false), board_nominations: {}, winner_team: null,
       blue_score: blueCount, red_score: redCount, current_turn: startingTurn, game_phase: 'hinting', timer_ends_at: null, hint_word: '', hint_count: 0
     }).eq('id', roomId);
-    addGameLog(`تم تحديث اللوحة بكلمات جديدة 🔄`, 'none');
+    addGameLog(`تم بدء جولة جديدة 🔄`, 'none');
   };
 
   const handleFileUpload = (e) => {
@@ -317,54 +477,81 @@ export default function GameBoard() {
     addGameLog(`تم تعديل إعدادات الروم ⚙️`, 'none');
   };
 
-  const handleWordClick = async (index) => {
-    if (userRole !== "decoder" || userTeam !== currentTurn || gamePhase !== "guessing" || revealedWords[index]) return;
+  const handleWordClick = async (index, action = 'toggle') => {
+    if (userRole !== "decoder" || userTeam !== currentTurn || revealedWords[index] || gamePhase === 'ended') return;
+
     const wordNoms = nominations[index] || [];
     const isNominatedByMe = wordNoms.includes(userName);
 
-    if (!isNominatedByMe) {
-      const newNoms = { ...nominations }; newNoms[index] = [...wordNoms, userName];
+    if (action === 'toggle') {
+      const newNoms = { ...nominations };
+      if (isNominatedByMe) {
+        newNoms[index] = wordNoms.filter(n => n !== userName);
+        if (newNoms[index].length === 0) delete newNoms[index];
+      } else {
+        newNoms[index] = [...wordNoms, userName];
+        addGameLog(`🔍 ${userName} رشّح كلمة "${currentWords[index]}"`, currentTurn);
+      }
       setNominations(newNoms); 
       await supabase.from('rooms').update({ board_nominations: newNoms }).eq('id', roomId);
-      addGameLog(`🔍 ${userName} رشّح كلمة "${currentWords[index]}"`, currentTurn);
       return; 
     }
 
-    let currentTimerEndsAt = timerEndsAt;
-    if (!timerEndsAt && timerDuration > 0) currentTimerEndsAt = new Date(Date.now() + timerDuration * 1000).toISOString();
+    if (action === 'confirm' && isNominatedByMe) {
+      let currentTimerEndsAt = timerEndsAt;
+      if (!timerEndsAt && timerDuration > 0) currentTimerEndsAt = new Date(Date.now() + timerDuration * 1000).toISOString();
 
-    const newRevealed = [...revealedWords]; newRevealed[index] = true;
-    const actualColor = wordColors[index]; const wordText = currentWords[index];
-    const newNoms = { ...nominations }; delete newNoms[index];
+      const newRevealed = [...revealedWords]; newRevealed[index] = true;
+      const actualColor = wordColors[index]; const wordText = currentWords[index];
+      const newNoms = { ...nominations }; delete newNoms[index];
 
-    let newBlue = blueScore; let newRed = redScore; let newTurn = currentTurn; let newPhase = gamePhase;
+      let newBlue = blueScore; let newRed = redScore; let newTurn = currentTurn; let newPhase = gamePhase;
+      let winningTeam = null;
+      let newBlueWins = blueWins; let newRedWins = redWins;
 
-    if (actualColor === "bg-blue-600") newBlue = Math.max(0, blueScore - 1);
-    else if (actualColor === "bg-red-600") newRed = Math.max(0, redScore - 1);
-    
-    const isCorrect = actualColor === (currentTurn === "blue" ? "bg-blue-600" : "bg-red-600");
-    addGameLog(`${userName} أكد اختيار "${wordText}" - ${isCorrect ? 'إجابة صحيحة ✅' : 'إجابة خاطئة ❌'}`, currentTurn);
+      if (actualColor === "bg-black") {
+        winningTeam = currentTurn === "blue" ? "red" : "blue";
+        addGameLog(`☠️ كارثة! ${userName} اختار الكلمة السوداء "${wordText}"!`, currentTurn);
+        newPhase = "ended";
+        if (winningTeam === 'blue') newBlueWins += 1; else newRedWins += 1;
+      } else {
+        if (actualColor === "bg-blue-600") newBlue = Math.max(0, blueScore - 1);
+        else if (actualColor === "bg-red-600") newRed = Math.max(0, redScore - 1);
+        
+        const isCorrect = actualColor === (currentTurn === "blue" ? "bg-blue-600" : "bg-red-600");
+        addGameLog(`${userName} أكد اختيار "${wordText}" - ${isCorrect ? 'إجابة صحيحة ✅' : 'إجابة خاطئة ❌'}`, currentTurn);
 
-    if (!isCorrect) { newTurn = currentTurn === "blue" ? "red" : "blue"; newPhase = "hinting"; }
+        if (newBlue === 0) { winningTeam = 'blue'; newPhase = "ended"; newBlueWins += 1; }
+        else if (newRed === 0) { winningTeam = 'red'; newPhase = "ended"; newRedWins += 1; }
+        else if (!isCorrect) {
+          newTurn = currentTurn === "blue" ? "red" : "blue"; 
+          newPhase = "hinting";
+        }
+      }
 
-    await supabase.from('rooms').update({
-      board_revealed: newRevealed, board_nominations: newNoms, blue_score: newBlue, red_score: newRed, current_turn: newTurn, game_phase: newPhase,
-      timer_ends_at: currentTimerEndsAt, hint_word: newPhase === "hinting" ? "" : hintWord, hint_count: newPhase === "hinting" ? 0 : hintCount
-    }).eq('id', roomId);
+      setRevealedWords(newRevealed);
+      await supabase.from('rooms').update({
+        board_revealed: newRevealed, board_nominations: newNoms, blue_score: newBlue, red_score: newRed, 
+        blue_wins: newBlueWins, red_wins: newRedWins,
+        current_turn: newTurn, game_phase: newPhase, winner_team: winningTeam,
+        timer_ends_at: currentTimerEndsAt, hint_word: newPhase === "hinting" ? "" : hintWord, hint_count: newPhase === "hinting" ? 0 : hintCount
+      }).eq('id', roomId);
+    }
   };
 
   const sendHint = async () => {
-    if (hintCount > 0 && hintInput.trim() && userRole === "master") {
+    const finalCount = hintCount === 99 || hintCount === "∞" ? 99 : parseInt(hintCount) || 0;
+    if (finalCount > 0 && hintInput.trim() && userRole === "master") {
       let currentTimerEndsAt = timerEndsAt;
       if (!timerEndsAt && timerDuration > 0) currentTimerEndsAt = new Date(Date.now() + timerDuration * 1000).toISOString();
-      await supabase.from('rooms').update({ hint_word: hintInput, hint_count: hintCount, game_phase: "guessing", timer_ends_at: currentTimerEndsAt }).eq('id', roomId);
-      addGameLog(`المشفر ${userName} أرسل: ${hintInput} (${hintCount})`, userTeam);
+      await supabase.from('rooms').update({ hint_word: hintInput, hint_count: finalCount, game_phase: "guessing", timer_ends_at: currentTimerEndsAt }).eq('id', roomId);
+      addGameLog(`المشفر ${userName} أرسل الشفرة: ${hintInput} (${finalCount === 99 ? '∞' : finalCount})`, userTeam);
       setHintInput("");
     }
   };
 
   const formatTime = (secs) => {
-    if (secs === null || secs < 0) return "00:00";
+    if (secs === null || secs <= 0) return "00:00";
     const m = Math.floor(secs / 60).toString().padStart(2, '0');
     const s = (secs % 60).toString().padStart(2, '0');
     return `${m}:${s}`;
@@ -388,7 +575,7 @@ export default function GameBoard() {
         <div className="bg-slate-900 border border-slate-800 p-8 rounded-3xl w-full max-w-sm shadow-xl font-bold flex flex-col items-center">
           <h2 className="text-2xl font-black text-teal-400 mb-6 text-center uppercase tracking-widest">الدروازة 🚪</h2>
           {isJoiningUI ? (
-            <div className="text-center text-slate-300 font-bold animate-pulse text-sm py-4">جاري دخول الدروازة... 🚀</div>
+            <div className="text-center text-slate-300 font-bold animate-pulse text-sm py-4">جاري الدخول وتجهيز مكانك... 🚀</div>
           ) : (
             <form onSubmit={handleJoinSubmit} className="space-y-4 w-full">
               <input type="text" value={userName} onChange={(e) => setUserName(e.target.value)} className="w-full p-4 rounded-xl bg-[#020617] border border-slate-700 text-center font-bold outline-none focus:border-teal-500 text-slate-200 placeholder-slate-500 transition-colors" placeholder="وش اسمك؟" required />
@@ -403,15 +590,29 @@ export default function GameBoard() {
   if (!isDataLoaded || currentWords.length === 0) return <div className="min-h-[80vh] flex items-center justify-center font-bold text-slate-500 relative"><div className="fixed top-0 left-0 w-screen h-screen bg-[#020617] z-[-1]"></div>جاري فتح الدروازة وتجهيز الكلمات...</div>;
 
   return (
-    <div className="w-full min-h-screen relative font-sans text-right py-4" dir="rtl">
+    <div className="w-full min-h-screen relative font-sans text-right py-4 mb-10" dir="rtl">
       <style>{`
         @keyframes bg-pan { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
         .animated-gradient-board { background: linear-gradient(135deg, #0f172a, #020617, #1e293b); background-size: 200% 200%; animation: bg-pan 15s ease infinite; }
       `}</style>
 
+      {showEndBanner && winnerTeam && (
+        <div onClick={() => setShowEndBanner(false)} className="fixed inset-0 z-[6000] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 cursor-pointer">
+          <div onClick={(e) => e.stopPropagation()} className={`w-full max-w-sm md:max-w-md p-8 rounded-3xl border-2 shadow-2xl flex flex-col items-center animate-bounce pointer-events-auto
+            ${userTeam === winnerTeam ? 'bg-blue-900/90 border-blue-400 text-blue-100 shadow-[0_0_40px_rgba(59,130,246,0.6)]' : 'bg-red-900/90 border-red-400 text-red-100 shadow-[0_0_40px_rgba(239,68,68,0.6)]'}`}>
+            <span className="text-6xl mb-4">{userTeam === winnerTeam ? '🏆' : '💀'}</span>
+            <h2 className="text-3xl font-black text-center">
+              {userTeam === winnerTeam ? 'كفو! فريقكم فاز' : 'هاردلك! تعوضونها بالجايات'}
+            </h2>
+            <p className="text-base font-bold opacity-90 mt-2">الفائز الجولة هذي: {winnerTeam === 'blue' ? 'الدهاة' : 'الجهابذة'}</p>
+            <p onClick={() => setShowEndBanner(false)} className="text-xs text-white/50 mt-6 animate-pulse cursor-pointer px-4 py-2 bg-black/20 rounded-xl hover:bg-black/40 transition">(اضغط هنا لإخفاء الرسالة)</p>
+          </div>
+        </div>
+      )}
+
       <div className="fixed top-0 left-0 w-screen h-screen bg-[#020617] z-[-1]"></div>
 
-      <main className="w-full max-w-4xl mx-auto flex flex-col items-center px-2 sm:px-4 space-y-4">
+      <main className="w-full max-w-4xl mx-auto flex flex-col items-center px-2 sm:px-4 space-y-4 relative z-10">
         
         {userRole === "spectator" && (
           <div onClick={openSettings} className="w-full max-w-2xl bg-slate-900 border border-slate-800 text-teal-400 p-2.5 rounded-xl flex justify-center items-center shadow-lg cursor-pointer transition-colors hover:bg-slate-800 mx-2" style={{ animation: 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite' }}>
@@ -419,14 +620,19 @@ export default function GameBoard() {
           </div>
         )}
 
-        <div className="w-full max-w-2xl bg-slate-900 border border-slate-800 p-3 rounded-2xl shadow-sm flex flex-wrap justify-between items-center gap-y-3 gap-x-2 mx-2">
-          <div className="flex items-center gap-2 w-auto">
+        <div className="w-full max-w-2xl bg-slate-900 border border-slate-800 p-3 rounded-2xl shadow-sm flex flex-wrap justify-between items-center gap-y-3 gap-x-2 mx-2 relative z-40">
+          <div className="flex items-center gap-1.5 sm:gap-2 w-auto relative">
              <div className={`px-2 sm:px-3 py-1.5 rounded-xl text-[9px] sm:text-[10px] font-bold uppercase bg-[#020617] border border-slate-800 ${currentTurn === 'blue' ? 'text-blue-400' : 'text-red-400'}`}>
               دور: <span className="font-black">{currentTurn === 'blue' ? 'الدهاة' : 'الجهابذة'}</span> {gamePhase === "hinting" ? "(يلمح)" : "(يخمن)"}
             </div>
             {isOwner && (
-              <button onClick={() => setIsAdminModalOpen(true)} className="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2 sm:px-3 py-1.5 rounded-xl text-[9px] sm:text-[10px] font-bold shadow-sm transition-colors relative z-10 cursor-pointer">
+              <button onClick={() => setIsAdminModalOpen(true)} className="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2 sm:px-3 py-1.5 rounded-xl text-[9px] sm:text-[10px] font-bold shadow-sm transition-colors cursor-pointer relative z-10">
                 الإعدادات ⚙️
+              </button>
+            )}
+            {gamePhase === 'ended' && isOwner && (
+              <button onClick={() => resetBoardWithWords(wordPacks.general.words)} className="bg-gradient-to-br from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white border border-amber-600 px-2 sm:px-3 py-1.5 rounded-xl text-[9px] sm:text-[10px] font-bold shadow-[0_0_10px_rgba(245,158,11,0.4)] transition-all animate-bounce relative z-50 cursor-pointer">
+                إعادة 🔄
               </button>
             )}
           </div>
@@ -438,10 +644,10 @@ export default function GameBoard() {
           )}
 
           <div className="flex items-center gap-2 w-auto">
-            <button onClick={() => setIsPlayersListOpen(true)} className="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[9px] sm:text-[10px] font-bold px-3 py-1.5 rounded-xl shadow-sm transition-colors relative z-10 cursor-pointer">
+            <button onClick={() => setIsPlayersListOpen(true)} className="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[9px] sm:text-[10px] font-bold px-3 py-1.5 rounded-xl shadow-sm transition-colors cursor-pointer relative z-10">
               👥 ({roomPlayers.filter(p => p.is_online).length})
             </button>
-            <button onClick={openSettings} className="bg-gradient-to-br from-teal-600 to-teal-800 text-white text-[9px] sm:text-[10px] font-bold px-3 py-1.5 rounded-xl shadow-sm hover:from-teal-500 hover:to-teal-700 transition-colors relative z-10 cursor-pointer">
+            <button onClick={openSettings} className="bg-gradient-to-br from-teal-600 to-teal-800 text-white text-[9px] sm:text-[10px] font-bold px-3 py-1.5 rounded-xl shadow-sm hover:from-teal-500 hover:to-teal-700 transition-colors cursor-pointer relative z-10">
               ملفي 👤
             </button>
           </div>
@@ -476,7 +682,7 @@ export default function GameBoard() {
             }
 
             return (
-              <button key={index} onClick={() => handleWordClick(index)} className={`min-h-[55px] sm:min-h-[75px] rounded-xl flex items-center justify-center transition-all relative ${btnClasses}`}>
+              <div key={index} onClick={() => handleWordClick(index, 'toggle')} className={`min-h-[55px] sm:min-h-[75px] rounded-xl flex items-center justify-center transition-all relative cursor-pointer select-none ${btnClasses}`}>
                 <span className="text-[9px] sm:text-sm font-black text-center px-0.5 leading-tight">{word}</span>
                 
                 {!isRevealed && wordNoms.length > 0 && (
@@ -489,24 +695,94 @@ export default function GameBoard() {
                 )}
 
                 {isNominatedByMe && !isRevealed && (
-                  <div className="absolute bottom-0 w-full bg-black/70 text-amber-300 text-[7px] sm:text-[9px] font-black py-0.5 sm:py-1 rounded-b-xl backdrop-blur-sm z-20">
-                    اضغط للتأكيد
+                  <div 
+                    onClick={(e) => { 
+                      e.preventDefault(); 
+                      e.stopPropagation(); 
+                      handleWordClick(index, 'confirm'); 
+                    }} 
+                    className="absolute bottom-0 w-full text-center bg-black/90 hover:bg-black text-amber-300 hover:text-amber-100 text-[9px] sm:text-[11px] font-black py-1.5 rounded-b-xl backdrop-blur-md z-30 cursor-pointer transition-all shadow-[0_-2px_10px_rgba(0,0,0,0.5)] border-t border-amber-500/30"
+                  >
+                    تأكيد الاختيار 🎯
                   </div>
                 )}
-              </button>
+              </div>
             );
           })}
         </div>
 
         {boardFaded && <div className="text-slate-300 text-xs font-bold bg-slate-900 border border-slate-800 px-4 py-2 rounded-xl mx-2">الروم مقفلة حالياً، يمكنك المشاهدة فقط 🍿</div>}
 
+        {/* 🚀 صندوق الشفرة المعدل والاحترافي (زر التخطي ينضغط بسلاسة) */}
+        {userRole !== "spectator" && (
+          <div className="w-full max-w-2xl px-2 my-1 relative z-50">
+            {gamePhase === "hinting" ? (
+              userRole === "master" && userTeam === currentTurn && (
+                <div className="flex gap-1.5 sm:gap-2 bg-slate-900 p-2 sm:p-2.5 rounded-2xl border border-teal-500/50 shadow-lg animate-radar w-full items-center">
+                  <span className="text-[9px] sm:text-xs text-slate-500 font-bold shrink-0 opacity-80">الشفرة:</span>
+                  
+                  <input type="text" value={hintInput} onChange={(e) => setHintInput(e.target.value)} placeholder="الكلمة..." className="flex-1 min-w-[60px] bg-[#020617] border border-slate-700 rounded-lg sm:rounded-xl px-2 py-1.5 sm:py-2 text-[10px] sm:text-sm font-bold outline-none text-right focus:border-teal-500 text-slate-200 placeholder-slate-500 transition-colors" />
+                  
+                  <select 
+                    value={hintCount === 99 ? "∞" : hintCount === 0 ? "" : hintCount} 
+                    onChange={(e) => { const val = e.target.value; if(val === "∞") setHintCount(99); else setHintCount(parseInt(val) || 0); }} 
+                    className="w-[45px] sm:w-[60px] bg-[#020617] border border-slate-700 rounded-lg sm:rounded-xl px-1 py-1.5 sm:py-2 text-[10px] sm:text-sm font-black outline-none focus:border-teal-500 text-teal-400 shrink-0 appearance-none text-center cursor-pointer"
+                  >
+                    <option value="" disabled hidden>العدد</option>
+                    <option value="1">1</option>
+                    <option value="2">2</option>
+                    <option value="3">3</option>
+                    <option value="4">4</option>
+                    <option value="5">5</option>
+                    <option value="6">6</option>
+                    <option value="7">7</option>
+                    <option value="8">8</option>
+                    <option value="9">9</option>
+                    <option value="∞">∞</option>
+                  </select>
+
+                  <button onClick={sendHint} className="bg-gradient-to-br from-teal-500 to-teal-700 text-white px-3 sm:px-6 py-1.5 sm:py-2 rounded-lg sm:rounded-xl text-[10px] sm:text-sm font-bold shadow-md hover:from-teal-400 hover:to-teal-600 transition-colors shrink-0">إرسال</button>
+                </div>
+              )
+            ) : (
+              gamePhase === "guessing" && hintWord && (
+                <div className="flex justify-between items-center bg-gradient-to-r from-slate-900 to-slate-800 border border-teal-500/50 p-2.5 sm:p-3 rounded-2xl shadow-lg animate-radar">
+                  <div className="flex items-center gap-2 sm:gap-3">
+                    <span className="text-[10px] sm:text-xs text-slate-500 font-bold opacity-80 mt-0.5">الشفرة:</span>
+                    <span className="text-base sm:text-2xl font-black text-teal-400 tracking-wider bg-[#020617] px-3 sm:px-4 py-1 rounded-lg border border-slate-700 shadow-inner">
+                      {hintWord}
+                    </span>
+                    <span className="bg-teal-900/60 border border-teal-500/40 text-teal-200 text-xs sm:text-base font-black px-2.5 py-1 rounded-lg flex items-center justify-center min-w-[30px] shadow-md">
+                      {hintCount === 99 ? '∞' : hintCount}
+                    </span>
+                  </div>
+                  
+                  {userRole === 'decoder' && userTeam === currentTurn && (
+                    <button 
+                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); skipTurn(); }} 
+                      className="bg-red-600 hover:bg-red-500 text-white border-2 border-red-700 px-3 sm:px-4 py-1.5 rounded-xl text-[10px] sm:text-[12px] font-black transition-all shadow-[0_0_15px_rgba(220,38,38,0.5)] whitespace-nowrap cursor-pointer relative z-50 active:scale-95"
+                    >
+                      تخطي الدور ⏭️
+                    </button>
+                  )}
+                </div>
+              )
+            )}
+          </div>
+        )}
+
         <div className="w-full max-w-2xl grid grid-cols-2 gap-3 mx-2 px-2">
-          <div className="bg-[#0f172a]/80 border border-blue-900/60 rounded-2xl p-3 flex flex-col shadow-sm">
-            <div className="flex justify-between items-center mb-3 px-1">
-              <span className="text-[#BAE6FD] font-black text-sm uppercase tracking-widest">الدهاة</span>
+          {/* الدهاة */}
+          <div className="bg-[#0f172a]/80 border border-blue-900/60 rounded-2xl p-3 flex flex-col shadow-sm relative overflow-hidden">
+            {winnerTeam === 'blue' && <div className="absolute inset-0 bg-blue-500/10 animate-pulse pointer-events-none"></div>}
+            <div className="flex justify-between items-center mb-3 px-1 relative z-10">
+              <div className="flex flex-col">
+                <span className="text-[#BAE6FD] font-black text-sm uppercase tracking-widest">الدهاة</span>
+                <span className="text-blue-300 text-[9px] font-bold mt-0.5">الجولات: {blueWins} 🏆</span>
+              </div>
               <span className="text-[#F5F5DC] font-black text-xl sm:text-2xl bg-[#4C7D7E] border border-[#385F60] shadow-sm px-3 py-0.5 rounded-lg">{blueScore}</span>
             </div>
-            <div className="flex flex-col gap-2 w-full">
+            <div className="flex flex-col gap-2 w-full relative z-10">
               <div className="flex items-stretch gap-2">
                 <div className="text-[9px] font-black text-[#BAE6FD] shrink-0 w-[70px] sm:w-[80px] flex items-center justify-start">
                   {blueMasters.length > 1 ? 'المُشفرين 👑' : 'المُشفر 👑'}
@@ -514,8 +790,9 @@ export default function GameBoard() {
                 <div className="w-[1px] self-stretch bg-[#385F60] mx-0.5"></div>
                 <div className="flex flex-wrap gap-1.5 justify-start flex-1 py-0.5">
                   {blueMasters.map((p, i) => (
-                    <div key={i} className="flex items-center gap-1.5 bg-gradient-to-br from-[#203B3C] to-[#122223] text-[#F5F5DC] px-2 py-1 rounded-lg shadow-sm border border-[#15292A]">
-                      <span className="text-[9px] sm:text-[10px] font-bold">{p.name}</span><span className="text-[10px] sm:text-xs">{p.emoji}</span>
+                    <div key={i} onClick={() => { if(p.id === localPlayerId) openSettings(); else setIsPlayersListOpen(true); }} className="flex items-center gap-1.5 bg-gradient-to-br from-[#203B3C] to-[#122223] text-[#F5F5DC] px-2 py-1 rounded-lg shadow-sm border border-[#15292A] cursor-pointer hover:bg-[#2A4B4C] transition-colors" title={p.name}>
+                      <span className="text-[9px] sm:text-[10px] font-bold truncate max-w-[45px] sm:max-w-[65px] inline-block align-bottom">{p.name}</span>
+                      <span className="text-[10px] sm:text-xs shrink-0">{p.emoji}</span>
                     </div>
                   ))}
                   {userTeam === 'none' && !pinnedSpectators.includes(localPlayerId) && !isRoomLocked && (
@@ -533,8 +810,9 @@ export default function GameBoard() {
                 <div className="w-[1px] self-stretch bg-[#385F60] mx-0.5"></div>
                 <div className="flex flex-wrap gap-1.5 justify-start flex-1 py-0.5">
                   {blueDecoders.map((p, i) => (
-                    <div key={i} className="flex items-center gap-1.5 bg-gradient-to-br from-[#203B3C] to-[#122223] text-[#F5F5DC] px-2 py-1 rounded-lg shadow-sm border border-[#15292A]">
-                      <span className="text-[9px] sm:text-[10px] font-bold">{p.name}</span><span className="text-[10px] sm:text-xs">{p.emoji}</span>
+                    <div key={i} onClick={() => { if(p.id === localPlayerId) openSettings(); else setIsPlayersListOpen(true); }} className="flex items-center gap-1.5 bg-gradient-to-br from-[#203B3C] to-[#122223] text-[#F5F5DC] px-2 py-1 rounded-lg shadow-sm border border-[#15292A] cursor-pointer hover:bg-[#2A4B4C] transition-colors" title={p.name}>
+                      <span className="text-[9px] sm:text-[10px] font-bold truncate max-w-[45px] sm:max-w-[65px] inline-block align-bottom">{p.name}</span>
+                      <span className="text-[10px] sm:text-xs shrink-0">{p.emoji}</span>
                     </div>
                   ))}
                   {userTeam === 'none' && !pinnedSpectators.includes(localPlayerId) && !isRoomLocked && (
@@ -548,12 +826,17 @@ export default function GameBoard() {
             </div>
           </div>
 
-          <div className="bg-[#0f172a]/80 border border-red-900/60 rounded-2xl p-3 flex flex-col shadow-sm">
-            <div className="flex justify-between items-center mb-3 px-1">
-              <span className="text-[#FECACA] font-black text-sm uppercase tracking-widest">الجهابذة</span>
+          {/* الجهابذة */}
+          <div className="bg-[#0f172a]/80 border border-red-900/60 rounded-2xl p-3 flex flex-col shadow-sm relative overflow-hidden">
+            {winnerTeam === 'red' && <div className="absolute inset-0 bg-red-500/10 animate-pulse pointer-events-none"></div>}
+            <div className="flex justify-between items-center mb-3 px-1 relative z-10">
+              <div className="flex flex-col">
+                <span className="text-[#FECACA] font-black text-sm uppercase tracking-widest">الجهابذة</span>
+                <span className="text-red-300 text-[9px] font-bold mt-0.5">الجولات: {redWins} 🏆</span>
+              </div>
               <span className="text-[#F5F5DC] font-black text-xl sm:text-2xl bg-[#4C7D7E] border border-[#385F60] shadow-sm px-3 py-0.5 rounded-lg">{redScore}</span>
             </div>
-            <div className="flex flex-col gap-2 w-full">
+            <div className="flex flex-col gap-2 w-full relative z-10">
               <div className="flex items-stretch gap-2">
                 <div className="text-[9px] font-black text-[#FECACA] shrink-0 w-[70px] sm:w-[80px] flex items-center justify-start">
                   {redMasters.length > 1 ? 'المُشفرين 👑' : 'المُشفر 👑'}
@@ -561,8 +844,9 @@ export default function GameBoard() {
                 <div className="w-[1px] self-stretch bg-[#385F60] mx-0.5"></div>
                 <div className="flex flex-wrap gap-1.5 justify-start flex-1 py-0.5">
                   {redMasters.map((p, i) => (
-                    <div key={i} className="flex items-center gap-1.5 bg-gradient-to-br from-[#203B3C] to-[#122223] text-[#F5F5DC] px-2 py-1 rounded-lg shadow-sm border border-[#15292A]">
-                      <span className="text-[9px] sm:text-[10px] font-bold">{p.name}</span><span className="text-[10px] sm:text-xs">{p.emoji}</span>
+                    <div key={i} onClick={() => { if(p.id === localPlayerId) openSettings(); else setIsPlayersListOpen(true); }} className="flex items-center gap-1.5 bg-gradient-to-br from-[#203B3C] to-[#122223] text-[#F5F5DC] px-2 py-1 rounded-lg shadow-sm border border-[#15292A] cursor-pointer hover:bg-[#2A4B4C] transition-colors" title={p.name}>
+                      <span className="text-[9px] sm:text-[10px] font-bold truncate max-w-[45px] sm:max-w-[65px] inline-block align-bottom">{p.name}</span>
+                      <span className="text-[10px] sm:text-xs shrink-0">{p.emoji}</span>
                     </div>
                   ))}
                   {userTeam === 'none' && !pinnedSpectators.includes(localPlayerId) && !isRoomLocked && (
@@ -580,8 +864,9 @@ export default function GameBoard() {
                 <div className="w-[1px] self-stretch bg-[#385F60] mx-0.5"></div>
                 <div className="flex flex-wrap gap-1.5 justify-start flex-1 py-0.5">
                   {redDecoders.map((p, i) => (
-                    <div key={i} className="flex items-center gap-1.5 bg-gradient-to-br from-[#203B3C] to-[#122223] text-[#F5F5DC] px-2 py-1 rounded-lg shadow-sm border border-[#15292A]">
-                      <span className="text-[9px] sm:text-[10px] font-bold">{p.name}</span><span className="text-[10px] sm:text-xs">{p.emoji}</span>
+                    <div key={i} onClick={() => { if(p.id === localPlayerId) openSettings(); else setIsPlayersListOpen(true); }} className="flex items-center gap-1.5 bg-gradient-to-br from-[#203B3C] to-[#122223] text-[#F5F5DC] px-2 py-1 rounded-lg shadow-sm border border-[#15292A] cursor-pointer hover:bg-[#2A4B4C] transition-colors" title={p.name}>
+                      <span className="text-[9px] sm:text-[10px] font-bold truncate max-w-[45px] sm:max-w-[65px] inline-block align-bottom">{p.name}</span>
+                      <span className="text-[10px] sm:text-xs shrink-0">{p.emoji}</span>
                     </div>
                   ))}
                   {userTeam === 'none' && !pinnedSpectators.includes(localPlayerId) && !isRoomLocked && (
@@ -596,23 +881,7 @@ export default function GameBoard() {
           </div>
         </div>
 
-        {userRole !== "spectator" && (
-          <div className="w-full max-w-2xl px-2">
-            {gamePhase === "hinting" ? (
-              userRole === "master" && userTeam === currentTurn && (
-                <div className="flex gap-2 bg-slate-900 p-2.5 rounded-2xl border border-slate-800 shadow-sm">
-                  <div className="flex bg-[#020617] border border-slate-700 rounded-xl p-1 gap-1"><button onClick={() => setHintCount(prev => Math.max(0, prev - 1))} className="w-8 h-8 font-bold text-slate-400 hover:text-white rounded-lg">-</button><div className="w-8 h-8 flex items-center justify-center text-xs font-black text-teal-400 bg-slate-800 rounded-lg">{hintCount}</div><button onClick={() => setHintCount(prev => prev + 1)} className="w-8 h-8 font-bold text-slate-400 hover:text-white rounded-lg">+</button></div>
-                  <input type="text" value={hintInput} onChange={(e) => setHintInput(e.target.value)} placeholder="التلميحة..." className="flex-1 bg-[#020617] border border-slate-700 rounded-xl px-4 text-[10px] font-bold outline-none text-right focus:border-teal-500 text-slate-200 placeholder-slate-500 transition-colors" />
-                  <button onClick={sendHint} className="bg-gradient-to-br from-teal-500 to-teal-700 text-white px-6 rounded-xl font-bold shadow-md hover:from-teal-400 hover:to-teal-600 transition-colors">أرسل</button>
-                </div>
-              )
-            ) : (
-              <div className="bg-slate-900 border border-slate-800 p-3 rounded-2xl flex justify-between items-center shadow-sm"><div className="flex flex-col"><span className="text-[9px] text-slate-500 font-bold uppercase mb-0.5">التلميحة</span><span className="text-lg font-black text-slate-200">{hintWord}</span></div><div className="bg-gradient-to-br from-teal-500 to-teal-700 text-white w-12 h-12 rounded-xl flex items-center justify-center text-xl font-black shadow-md">{hintCount}</div></div>
-            )}
-          </div>
-        )}
-
-        <div className="w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm h-36 overflow-y-auto mx-2" ref={scrollRef}>
+        <div className="w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm h-36 overflow-y-auto mx-2 mt-2" ref={scrollRef}>
           <h4 className="text-[9px] font-bold text-slate-500 mb-3 uppercase tracking-widest border-b border-slate-800 pb-1.5">مجريات اللعبة 📜</h4>
           <div className="space-y-1.5">
             {gameLogs.map((log, i) => (
@@ -626,64 +895,10 @@ export default function GameBoard() {
 
       </main>
 
-      {/* استدعاء النوافذ المستقلة */}
-      <AddPackModal 
-        isOpen={isAddPackModalOpen} 
-        onClose={() => setIsAddPackModalOpen(false)} 
-        handleFileUpload={handleFileUpload} 
-        customPackText={customPackText} 
-        setCustomPackText={setCustomPackText} 
-        saveCustomPack={saveCustomPack} 
-      />
-
-      <PlayersListModal 
-        isOpen={isPlayersListOpen} 
-        onClose={() => setIsPlayersListOpen(false)} 
-        bluePlayers={bluePlayers} 
-        redPlayers={redPlayers} 
-        spectatorPlayers={spectatorPlayers} 
-        userName={userName} 
-        isOwner={isOwner} 
-        localPlayerId={localPlayerId} 
-        pinnedSpectators={pinnedSpectators} 
-        kickPlayer={kickPlayer} 
-        togglePinPlayer={togglePinPlayer} 
-      />
-
-      <AdminModal 
-        isOpen={isAdminModalOpen} 
-        onClose={() => setIsAdminModalOpen(false)} 
-        isOwner={isOwner} 
-        isRoomLocked={isRoomLocked} 
-        allowNameChange={allowNameChange} 
-        timerDuration={timerDuration} 
-        saveAdminSettings={saveAdminSettings} 
-        wordPacks={wordPacks} 
-        setIsAddPackModalOpen={setIsAddPackModalOpen} 
-        resetBoardWithWords={resetBoardWithWords} 
-      />
-
-      <ProfileModal 
-        isOpen={isEditModalOpen} 
-        onClose={() => setIsEditModalOpen(false)} 
-        editName={editName} 
-        setEditName={setEditName} 
-        allowNameChange={allowNameChange} 
-        isOwner={isOwner} 
-        availableEmojis={availableEmojis} 
-        editEmoji={editEmoji} 
-        setEditEmoji={setEditEmoji} 
-        isRoomLocked={isRoomLocked} 
-        userTeam={userTeam} 
-        pinnedSpectators={pinnedSpectators} 
-        localPlayerId={localPlayerId} 
-        editTeam={editTeam} 
-        setEditTeam={setEditTeam} 
-        userRole={userRole} 
-        editRole={editRole} 
-        setEditRole={setEditRole} 
-        saveProfile={saveProfile} 
-      />
+      <AddPackModal isOpen={isAddPackModalOpen} onClose={() => setIsAddPackModalOpen(false)} handleFileUpload={handleFileUpload} customPackText={customPackText} setCustomPackText={setCustomPackText} saveCustomPack={saveCustomPack} />
+      <PlayersListModal isOpen={isPlayersListOpen} onClose={() => setIsPlayersListOpen(false)} bluePlayers={bluePlayers} redPlayers={redPlayers} spectatorPlayers={spectatorPlayers} localPlayerId={localPlayerId} isOwner={isOwner} isRoomCreator={isRoomCreator} pinnedSpectators={pinnedSpectators} kickPlayer={kickPlayer} togglePinPlayer={togglePinPlayer} reportPlayer={reportPlayer} toggleAdmin={toggleAdmin} />
+      <AdminModal isOpen={isAdminModalOpen} onClose={() => setIsAdminModalOpen(false)} isOwner={isOwner} isRoomLocked={isRoomLocked} allowNameChange={allowNameChange} timerDuration={timerDuration} saveAdminSettings={saveAdminSettings} wordPacks={wordPacks} setIsAddPackModalOpen={setIsAddPackModalOpen} resetBoardWithWords={resetBoardWithWords} />
+      <ProfileModal isOpen={isEditModalOpen} onClose={() => setIsEditModalOpen(false)} editName={editName} setEditName={setEditName} allowNameChange={allowNameChange} isOwner={isOwner} availableEmojis={availableEmojis} editEmoji={editEmoji} setEditEmoji={setEditEmoji} isRoomLocked={isRoomLocked} userTeam={userTeam} pinnedSpectators={pinnedSpectators} localPlayerId={localPlayerId} editTeam={editTeam} setEditTeam={setEditTeam} userRole={userRole} editRole={editRole} setEditRole={setEditRole} saveProfile={saveProfile} />
     </div>
   );
 }

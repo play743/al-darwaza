@@ -1,66 +1,72 @@
-import React from "react";
+import React from 'react';
 
-export default function PlayersListModal({ isOpen, onClose, bluePlayers, redPlayers, spectatorPlayers, userName, isOwner, localPlayerId, pinnedSpectators, kickPlayer, togglePinPlayer }) {
+export default function PlayersListModal({ 
+  isOpen, onClose, bluePlayers, redPlayers, spectatorPlayers, 
+  localPlayerId, isOwner, isRoomCreator, pinnedSpectators, 
+  kickPlayer, togglePinPlayer, reportPlayer, toggleAdmin 
+}) {
   if (!isOpen) return null;
 
-  const PlayerListGroup = ({ title, players, color }) => {
-    if (players.length === 0) return null;
-    const isSpectator = color === 'stone';
-    const bgClass = 'bg-slate-900 border-slate-800';
-    const textClass = 'text-slate-200';
-
-    return (
-      <div className="mb-4">
-        <h4 className={`text-[11px] font-black mb-2 ${textClass} uppercase px-1 border-b border-slate-700 pb-1`}>
-          {title} ({players.length})
-        </h4>
-        <div className="space-y-1.5">
-          {players.map((p, i) => (
-            <div key={i} className={`flex justify-between items-center p-2.5 rounded-xl border ${bgClass} shadow-sm`}>
-              <div className="flex items-center gap-2">
-                <span className="text-lg">{p.emoji}</span>
-                <span className="text-xs font-bold text-slate-200">
-                  {p.name} {p.name === userName && <span className="text-slate-400 font-bold">(أنت)</span>}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className={`text-[9px] px-2 py-1 rounded-md font-bold ${isSpectator ? 'bg-slate-800 border border-slate-700 text-slate-400' : p.role === 'master' ? 'bg-gradient-to-br from-[#203B3C] to-[#122223] text-[#F5F5DC]' : 'bg-[#4C7D7E] border border-[#385F60] text-[#F5F5DC]'}`}>
-                  {isSpectator ? '🍿 مشاهد' : p.role === 'master' ? '👑 مُشفر' : '🔍 مفكك'}
-                </span>
-                {isOwner && p.id !== localPlayerId && (
-                  <div className="flex gap-1">
-                    {!isSpectator && (
-                      <button onClick={() => kickPlayer(p.id)} className="bg-red-900/50 border border-red-800/50 text-red-300 text-[9px] px-2 py-1 rounded-md font-bold hover:bg-red-800 transition-colors">
-                        طرد للمشاهدين
-                      </button>
-                    )}
-                    {isSpectator && (
-                      <button onClick={() => togglePinPlayer(p.id)} className={`${pinnedSpectators.includes(p.id) ? 'bg-teal-900/50 border-teal-800/50 text-teal-300' : 'bg-slate-800 border-slate-700 text-slate-400'} text-[9px] px-2 py-1 rounded-md font-bold transition-colors`}>
-                        {pinnedSpectators.includes(p.id) ? '📌 مثبت' : '📌 تثبيت'}
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
+  // دالة صغيرة ترسم صف اللاعب مع الأزرار
+  const renderPlayerRow = (p) => (
+    <div key={p.id} className="flex items-center justify-between bg-[#020617] p-2 rounded-xl border border-slate-800 mb-1.5">
+      <div className="flex items-center gap-2">
+        <span className="text-xl">{p.emoji}</span>
+        <div className="flex flex-col">
+          <div className="flex items-center gap-1">
+            <span className="text-xs font-bold text-slate-200">{p.name}</span>
+            {p.id === localPlayerId && <span className="text-[8px] bg-teal-900 text-teal-300 px-1.5 py-0.5 rounded-full font-black">أنت</span>}
+            {p.is_admin && <span className="text-[8px] bg-amber-900/80 text-amber-300 border border-amber-700 px-1.5 py-0.5 rounded-full font-black">مشرف 👑</span>}
+          </div>
+          <span className="text-[9px] text-slate-500 font-bold">{p.role === 'master' ? 'مشفر 👑' : p.role === 'decoder' ? 'مفكك 🔍' : 'مشاهد 🍿'}</span>
         </div>
       </div>
-    );
-  };
+
+      <div className="flex gap-1.5">
+        {/* زر التثبيت والتنزيل (للمشرفين) */}
+        {isOwner && p.id !== localPlayerId && (
+          <button onClick={() => togglePinPlayer(p.id)} className={`text-[9px] px-2 py-1 rounded-lg font-bold border transition-colors ${pinnedSpectators.includes(p.id) ? 'bg-amber-900/50 text-amber-400 border-amber-800 hover:bg-amber-900' : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'}`}>
+            {pinnedSpectators.includes(p.id) ? 'إلغاء التثبيت 📌' : 'تثبيت كمشاهد 📌'}
+          </button>
+        )}
+
+        {/* زر الترقية لمشرف (لمنشئ الروم الأساسي فقط) */}
+        {isRoomCreator && p.id !== localPlayerId && (
+          <button onClick={() => toggleAdmin(p.id, p.is_admin, p.name)} className={`text-[9px] px-2 py-1 rounded-lg font-bold border transition-colors ${p.is_admin ? 'bg-red-900/50 text-red-400 border-red-800 hover:bg-red-900' : 'bg-amber-900/50 text-amber-400 border-amber-800 hover:bg-amber-900'}`}>
+            {p.is_admin ? 'سحب الإشراف 🔻' : 'ترقية لمشرف 🌟'}
+          </button>
+        )}
+
+        {/* زر الإبلاغ (يظهر للكل إلا على أنفسهم، وما تقدر تبلغ على منشئ الروم) */}
+        {p.id !== localPlayerId && !p.is_admin && (
+          <button onClick={() => reportPlayer(p.id, p.name)} className="text-[9px] bg-red-950 hover:bg-red-900 text-red-400 border border-red-900 px-2 py-1 rounded-lg font-bold transition-colors">
+            إبلاغ 🚨
+          </button>
+        )}
+      </div>
+    </div>
+  );
 
   return (
-    <div className="fixed inset-0 z-[5000] bg-[#020617]/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-slate-900 border border-slate-700 w-full max-w-md rounded-[2rem] p-6 shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-        <div className="flex justify-between items-center border-b border-slate-800 pb-3">
-          <h3 className="text-slate-100 font-black text-sm uppercase tracking-widest">الأعضاء والمشاهدين 👥</h3>
-          <button onClick={onClose} className="text-slate-500 hover:text-white text-2xl font-bold">×</button>
+    <div className="fixed inset-0 z-[6000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="bg-slate-900 border border-slate-700 w-full max-w-md rounded-3xl p-5 shadow-2xl relative max-h-[85vh] flex flex-col">
+        <h3 className="text-lg font-black text-teal-400 mb-4 text-center border-b border-slate-800 pb-3">اللاعبين المتصلين 👥</h3>
+        
+        <div className="overflow-y-auto pr-1 flex-1 space-y-4 scrollbar-hide">
+          {bluePlayers.length > 0 && (
+            <div><h4 className="text-[10px] font-black text-blue-400 mb-2 px-1">الدهاة 🔵</h4>{bluePlayers.map(renderPlayerRow)}</div>
+          )}
+          {redPlayers.length > 0 && (
+            <div><h4 className="text-[10px] font-black text-red-400 mb-2 px-1 mt-3">الجهابذة 🔴</h4>{redPlayers.map(renderPlayerRow)}</div>
+          )}
+          {spectatorPlayers.length > 0 && (
+            <div><h4 className="text-[10px] font-black text-slate-400 mb-2 px-1 mt-3">المشاهدين 🍿</h4>{spectatorPlayers.map(renderPlayerRow)}</div>
+          )}
         </div>
-        <div className="space-y-2">
-          <PlayerListGroup title="الدهاة 🔵" players={bluePlayers} color="blue" />
-          <PlayerListGroup title="الجهابذة 🔴" players={redPlayers} color="red" />
-          <PlayerListGroup title="المشاهدين 🍿" players={spectatorPlayers} color="stone" />
-        </div>
+
+        <button onClick={onClose} className="w-full mt-4 bg-slate-800 hover:bg-slate-700 text-white font-bold py-2.5 rounded-xl transition-colors text-xs border border-slate-700">
+          إغلاق
+        </button>
       </div>
     </div>
   );

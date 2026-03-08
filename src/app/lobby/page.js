@@ -23,14 +23,19 @@ export default function Lobby() {
     fetchRooms();
   }, [router]);
 
-  // دالة جلب الغرف وتصفيتها (إخفاء الغرف المهجورة)
+  // دالة جلب الغرف وتصفيتها (إخفاء الغرف المهجورة + الفرز الذكي)
   const fetchRooms = async () => {
     setIsLoading(true);
     try {
+      // 🚀 حددنا وقت (قبل 12 ساعة) عشان نتجاهل غرف الاختبار القديمة والمعلقة
+      const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
+
       const { data, error } = await supabase
         .from("rooms")
-        .select("id, name, status, players(id, is_online)")
+        // 🚀 أضفنا created_at عشان نقدر نفرز بالأقدمية
+        .select("id, name, status, created_at, players(id, is_online)")
         .eq("status", "waiting") 
+        .gte("created_at", twelveHoursAgo) // 🚀 فلتر يخفي أي غرفة زومبي أقدم من 12 ساعة
         .order("created_at", { ascending: false })
         .limit(50);
 
@@ -44,7 +49,13 @@ export default function Lobby() {
           };
         })
         .filter(room => room.playerCount > 0) // إخفاء أي روم ما فيها أحد متصل
-        .sort((a, b) => b.playerCount - a.playerCount);
+        // 🚀 خوارزمية الفرز الذكي: العدد الأقل أولاً، وإذا تساووا الأحدث أولاً
+        .sort((a, b) => {
+          if (a.playerCount !== b.playerCount) {
+            return a.playerCount - b.playerCount; // العدد الأقل فوق عشان يكتملون
+          }
+          return new Date(b.created_at) - new Date(a.created_at);
+        });
         
         setActiveRooms(formattedRooms);
       }
@@ -123,7 +134,9 @@ export default function Lobby() {
                 <div className="flex items-center gap-6">
                   <div className="flex flex-col items-center">
                     <span className="text-[9px] text-slate-500 font-bold mb-0.5">اللاعبين</span>
-                    <span className="text-sm font-black text-teal-400">{room.playerCount} 👥</span>
+                    <span className={`text-sm font-black ${room.playerCount < 4 ? 'text-amber-400' : 'text-teal-400'}`}>
+                      {room.playerCount} 👥
+                    </span>
                   </div>
                   <button onClick={() => joinRoom(room.id)} className="bg-teal-500/10 text-teal-400 border border-teal-500/20 px-8 py-3 rounded-xl text-xs font-black hover:bg-teal-500 hover:text-white transition-all shadow-sm">
                     دخول

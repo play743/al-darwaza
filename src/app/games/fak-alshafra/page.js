@@ -14,7 +14,7 @@ export default function FakAlshafraHome() {
   }, []);
 
   const createQuickRoom = async () => {
-    if (!playerName.trim()) return alert("تكفى اكتب اسمك قبل تدخل اللعب!");
+    if (!playerName.trim()) return alert(" اكتب اسمك  قبل تدخل تلعب ");
     
     localStorage.setItem("darwaza_global_name", playerName);
     const randomRoomId = Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -90,7 +90,7 @@ export default function FakAlshafraHome() {
         {/* منطقة الدخول */}
         <section className="flex flex-col items-center gap-4 pt-2">
           <div className="w-full max-w-sm space-y-3 text-center">
-            <label className="text-[10px] font-bold text-slate-400 block uppercase tracking-widest">اكتب اسمك اذا بتسوي غرفة</label>
+            <label className="text-[10px] font-bold text-slate-400 block uppercase tracking-widest">اكتب اسمك اولا </label>
             <input 
               type="text" 
               value={playerName} 
