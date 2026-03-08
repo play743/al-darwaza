@@ -24,12 +24,9 @@ const playSound = (type) => {
     try {
       const audio = type === 'win' ? winAudio : loseAudio;
       if (audio) {
-          audio.currentTime = 0; // يرجع الصوت من البداية
+          audio.currentTime = 0;
           audio.volume = 0.5; 
-          const playPromise = audio.play();
-          if (playPromise !== undefined) {
-              playPromise.catch(e => console.log("المتصفح ينتظر تفاعل المستخدم لتشغيل الصوت:", e));
-          }
+          audio.play().catch(e => console.log("المتصفح يحتاج تفاعل لتشغيل الصوت:", e));
       }
     } catch (error) {
       console.error("فشل تشغيل الصوت:", error);
