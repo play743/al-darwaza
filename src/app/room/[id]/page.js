@@ -92,6 +92,9 @@ export default function GameBoard() {
   const [gameLogs, setGameLogs] = useState([]);
   const [customPackText, setCustomPackText] = useState("");
   
+  // 🚀 حالة زر النسخ/المشاركة
+  const [isCopied, setIsCopied] = useState(false);
+
   const availableEmojis = ["🇸🇦","🇰🇼","🎮","🐲","🌑","🪐","🌧️","😤","🥳","🥲","☠️","🤌🏼","👤","🧘‍♂️","⛹️","🤽","🎤","🎧","🛵","🚀","🗿","🚦","🌃","🏞️","📱","🖥️","⌚️","⏳","🪫","💡","🪤","🪓","🩺","🦠","🪭","🦅","🐢","🕸️"];
 
   const [roomPlayers, setRoomPlayers] = useState([]);
@@ -110,7 +113,7 @@ export default function GameBoard() {
   const autoJoinAttempted = useRef(false);
   const lastNotifiedTurn = useRef(null);
 
-  // 🚀 خدعة فك حظر الصوت في المتصفحات (تشتغل مع أول لمسة للشاشة)
+  // 🚀 خدعة فك حظر الصوت في المتصفحات
   useEffect(() => {
     const unlockAudio = () => {
       if (winAudio && loseAudio) {
@@ -241,19 +244,16 @@ export default function GameBoard() {
     if (isNewPlayer) addGameLog(`دخل ${targetName} كـ مشاهد 🍿`);
   };
 
-  // 🚀 نظام تحديد الأصوات للفائز والخاسر بوضوح
   useEffect(() => {
     if (gamePhase === 'ended' && winnerTeam) {
       setShowEndBanner(true); 
       setTimeout(() => {
         if (userTeam === winnerTeam) {
-          // 🏆 الفريق الفائز يسمع صوت الفوز وتطير له الطراطيع
           playSound('win');
           fireFullScreenConfetti();
           document.body.classList.add('win-filter');
           setTimeout(() => document.body.classList.remove('win-filter'), 5000);
         } else if (userTeam === 'blue' || userTeam === 'red') {
-          // 💀 الفريق الخاسر يسمع الهاردلك والشاشة تهتز (المشاهدين ما يسمعون شيء)
           playSound('lose');
           document.body.classList.add('shake-screen-hard', 'lose-filter');
           setTimeout(() => document.body.classList.remove('shake-screen-hard'), 600);
@@ -339,6 +339,31 @@ export default function GameBoard() {
 
     return () => { supabase.removeChannel(channel); };
   }, [roomId, isJoined]);
+
+  // 🚀 دالة مشاركة الروم الذكية 
+  const handleShareRoom = async () => {
+    const roomLink = window.location.href; 
+    
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'الدروازة - فك الشفرة 🔍',
+          text: 'تعال العب معي فك الشفرة! غرفتنا جاهزة 🚀',
+          url: roomLink,
+        });
+      } catch (error) {
+        console.log('تم إلغاء المشاركة');
+      }
+    } else {
+      try {
+        await navigator.clipboard.writeText(roomLink);
+        setIsCopied(true);
+        setTimeout(() => setIsCopied(false), 2000); 
+      } catch (error) {
+        console.error('فشل النسخ:', error);
+      }
+    }
+  };
 
   const addGameLog = async (msg, team = 'none') => {
       const timeStr = new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' });
@@ -617,6 +642,7 @@ export default function GameBoard() {
           </div>
         )}
 
+        {/* 🚀 الهيدر العلوي وفيه زر المشاركة */}
         <div className="w-full max-w-2xl bg-slate-900 border border-slate-800 p-3 rounded-2xl shadow-sm flex flex-wrap justify-between items-center gap-y-3 gap-x-2 mx-2 relative z-40">
           <div className="flex items-center gap-1.5 sm:gap-2 w-auto relative">
              <div className={`px-2 sm:px-3 py-1.5 rounded-xl text-[9px] sm:text-[10px] font-bold uppercase bg-[#020617] border border-slate-800 ${currentTurn === 'blue' ? 'text-blue-400' : 'text-red-400'}`}>
@@ -640,11 +666,18 @@ export default function GameBoard() {
             </div>
           )}
 
-          <div className="flex items-center gap-2 w-auto">
-            <button onClick={() => setIsPlayersListOpen(true)} className="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[9px] sm:text-[10px] font-bold px-3 py-1.5 rounded-xl shadow-sm transition-colors cursor-pointer relative z-10">
+          {/* 🚀 قسم الأزرار وفيه زر المشاركة الجديد */}
+          <div className="flex items-center gap-1.5 sm:gap-2 w-auto">
+            <button 
+              onClick={handleShareRoom}
+              className="bg-slate-800 hover:bg-slate-700 text-teal-400 border border-slate-700 text-[9px] sm:text-[10px] font-bold px-2 sm:px-3 py-1.5 rounded-xl shadow-sm transition-colors cursor-pointer relative z-10"
+            >
+              {isCopied ? 'تم النسخ ✅' : 'انسخ الرابط 🔗'}
+            </button>
+            <button onClick={() => setIsPlayersListOpen(true)} className="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[9px] sm:text-[10px] font-bold px-2 sm:px-3 py-1.5 rounded-xl shadow-sm transition-colors cursor-pointer relative z-10">
               👥 ({roomPlayers.filter(p => p.is_online).length})
             </button>
-            <button onClick={openSettings} className="bg-gradient-to-br from-teal-600 to-teal-800 text-white text-[9px] sm:text-[10px] font-bold px-3 py-1.5 rounded-xl shadow-sm hover:from-teal-500 hover:to-teal-700 transition-colors cursor-pointer relative z-10">
+            <button onClick={openSettings} className="bg-gradient-to-br from-teal-600 to-teal-800 text-white text-[9px] sm:text-[10px] font-bold px-2 sm:px-3 py-1.5 rounded-xl shadow-sm hover:from-teal-500 hover:to-teal-700 transition-colors cursor-pointer relative z-10">
               ملفي 👤
             </button>
           </div>
@@ -710,7 +743,7 @@ export default function GameBoard() {
 
         {boardFaded && <div className="text-slate-300 text-xs font-bold bg-slate-900 border border-slate-800 px-4 py-2 rounded-xl mx-2">الروم مقفلة حالياً، يمكنك المشاهدة فقط 🍿</div>}
 
-        {/* 🚀 صندوق الشفرة المعدل والاحترافي (زر التخطي ينضغط بسلاسة) */}
+        {/* صندوق الشفرة المعدل */}
         {userRole !== "spectator" && (
           <div className="w-full max-w-2xl px-2 my-1 relative z-50">
             {gamePhase === "hinting" ? (

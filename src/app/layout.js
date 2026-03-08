@@ -4,6 +4,8 @@ import './globals.css'
 import Link from 'next/link'
 import { useState, useEffect } from 'react'
 import { usePathname } from 'next/navigation'
+// 🚀 استيراد مكون الإحصائيات من فيرسل
+import { Analytics } from "@vercel/analytics/react"
 
 export default function RootLayout({ children }) {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -49,7 +51,7 @@ export default function RootLayout({ children }) {
               )}
             </div>
 
-            {/* المنتصف: شعار الدروازة (لا يتقطع بالجوال) */}
+            {/* المنتصف: شعار الدروازة */}
             <div className="flex justify-center flex-1">
               <Link href="/">
                 <h1 className="text-xl sm:text-3xl font-black tracking-widest text-teal-400 cursor-pointer hover:scale-105 hover:text-teal-300 transition-all drop-shadow-md whitespace-nowrap">
@@ -78,6 +80,9 @@ export default function RootLayout({ children }) {
         <main className="flex-grow w-full" onClick={() => setIsDropdownOpen(false)}>
           {children}
         </main>
+
+        {/* 📊 إضافة مكون الإحصائيات ليعمل في كل الصفحات */}
+        <Analytics />
 
       </body>
     </html>

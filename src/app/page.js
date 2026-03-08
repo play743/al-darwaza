@@ -3,8 +3,9 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import confetti from 'canvas-confetti';
+import { supabase } from "../lib/supabase"; 
 
-// خوارزمية الألعاب النارية السلسة
+// 🎆 خوارزمية الألعاب النارية السلسة
 const fireSmoothFireworks = () => {
   const duration = 3 * 1000;
   const end = Date.now() + duration;
@@ -22,6 +23,7 @@ export default function Home() {
   
   const [showDatePopup, setShowDatePopup] = useState(false);
   const [activeModal, setActiveModal] = useState(null);
+  const [visitCount, setVisitCount] = useState(0);
 
   const footerPages = {
     privacy: {
@@ -39,14 +41,38 @@ export default function Home() {
   };
 
   useEffect(() => {
-    // 1. نظام الاحتفال
+    // 1. نظام الاحتفال عند أول دخول
     const hasCelebrated = localStorage.getItem("darwaza_launch_celebration_v3");
     if (!hasCelebrated) {
       fireSmoothFireworks();
       localStorage.setItem("darwaza_launch_celebration_v3", "true");
     }
 
-    // 2. الصوت الترحيبي البسيط (يشتغل مرة وحدة بالجلسة)
+    // 2. نظام حساب الزيارات 📈
+    const trackVisits = async () => {
+        try {
+            const { data, error } = await supabase
+                .from('site_stats')
+                .select('views')
+                .eq('id', 1)
+                .single();
+
+            if (data) {
+                const newCount = data.views + 1;
+                setVisitCount(newCount);
+                await supabase.from('site_stats').update({ views: newCount }).eq('id', 1);
+            } else {
+                await supabase.from('site_stats').insert([{ id: 1, views: 1 }]);
+                setVisitCount(1);
+            }
+        } catch (err) {
+            console.error("خطأ في حساب الزيارات:", err);
+        }
+    };
+
+    trackVisits();
+
+    // 3. الصوت الترحيبي
     let audio = new Audio('/sounds/welcome.mp3');
     audio.volume = 0.5;
 
@@ -87,7 +113,6 @@ export default function Home() {
         </section>
 
         <section className="w-full max-w-4xl flex flex-col items-center mt-8">
-          
           <div className="flex items-center gap-3 mb-8 w-full px-4">
             <div className="h-[1px] flex-1 bg-slate-800/80"></div>
             <h2 className="text-sm font-black text-slate-500 uppercase tracking-widest whitespace-nowrap">ألـعـابـنـا</h2>
@@ -95,8 +120,6 @@ export default function Home() {
           </div>
 
           <div className="grid grid-cols-4 gap-2 sm:gap-4 w-full max-w-lg mx-auto px-1 sm:px-2">
-            
-            {/* لعبة فك الشفرة */}
             <div 
               onClick={() => router.push('/games/fak-alshafra')}
               className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-1.5 sm:p-4 flex flex-col items-center justify-center hover:border-teal-500/50 hover:bg-slate-800/80 transition-all group cursor-pointer shadow-lg aspect-square relative"
@@ -109,25 +132,16 @@ export default function Home() {
               </p>
             </div>
 
-            {/* قريباً */}
-            <div className="bg-slate-900/30 border border-slate-800/50 rounded-2xl p-1.5 sm:p-4 flex flex-col items-center justify-center opacity-50 grayscale cursor-not-allowed aspect-square">
-              <div className="text-xl sm:text-4xl opacity-60 mb-1 sm:mb-2 mt-1">⏳</div>
-              <h3 className="text-[8px] sm:text-[14px] font-black text-slate-500 text-center leading-none">قريباً</h3>
-            </div>
-            <div className="bg-slate-900/30 border border-slate-800/50 rounded-2xl p-1.5 sm:p-4 flex flex-col items-center justify-center opacity-50 grayscale cursor-not-allowed aspect-square">
-              <div className="text-xl sm:text-4xl opacity-60 mb-1 sm:mb-2 mt-1">⏳</div>
-              <h3 className="text-[8px] sm:text-[14px] font-black text-slate-500 text-center leading-none">قريباً</h3>
-            </div>
-            <div className="bg-slate-900/30 border border-slate-800/50 rounded-2xl p-1.5 sm:p-4 flex flex-col items-center justify-center opacity-50 grayscale cursor-not-allowed aspect-square">
-              <div className="text-xl sm:text-4xl opacity-60 mb-1 sm:mb-2 mt-1">⏳</div>
-              <h3 className="text-[8px] sm:text-[14px] font-black text-slate-500 text-center leading-none">قريباً</h3>
-            </div>
-
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="bg-slate-900/30 border border-slate-800/50 rounded-2xl p-1.5 sm:p-4 flex flex-col items-center justify-center opacity-50 grayscale cursor-not-allowed aspect-square">
+                <div className="text-xl sm:text-4xl opacity-60 mb-1 sm:mb-2 mt-1">⏳</div>
+                <h3 className="text-[8px] sm:text-[14px] font-black text-slate-500 text-center leading-none">قريباً</h3>
+              </div>
+            ))}
           </div>
         </section>
       </div>
 
-      {/* الفوتر */}
       <footer className="w-full mt-20 border-t border-slate-800/60 bg-gradient-to-t from-[#020617] to-transparent pb-6 pt-10 flex flex-col items-center gap-6 relative z-10">
         
         <div 
@@ -151,12 +165,29 @@ export default function Home() {
           <button onClick={() => setActiveModal('contact')} className="text-[10px] sm:text-[11px] font-bold text-slate-600 hover:text-teal-400 transition-colors outline-none">تواصل معنا</button>
         </div>
 
-        <p className="text-[9px] text-slate-700 font-bold mt-2 tracking-widest">
-          جميع الحقوق محفوظة &copy; {new Date().getFullYear()}
-        </p>
+        {/* 🟢 سطر العداد المطور مع النقطة قبل النص والخط السفلي */}
+        <div className="flex items-center justify-center gap-3 text-[9px] text-slate-700 font-bold mt-2 tracking-widest">
+          
+          <div className="flex items-center gap-2 border-b border-slate-800/60 pb-0.5 transition-colors hover:border-teal-500/30">
+            {/* النقطة النابضة قبل كلمة عدد الزيارات */}
+            <div className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500 shadow-[0_0_5px_#22c55e]"></span>
+            </div>
+
+            <p className="flex items-center gap-1">
+              عدد الزيارات: 
+              <span className="text-teal-500 font-mono text-[11px]">{visitCount.toLocaleString()}</span>
+            </p>
+          </div>
+
+          <span className="opacity-30">|</span>
+
+          <p>جميع الحقوق محفوظة &copy; {new Date().getFullYear()}</p>
+        </div>
+
       </footer>
 
-      {/* النافذة المنبثقة */}
       {activeModal && (
         <div className="fixed inset-0 z-[9999] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 transition-opacity">
           <div className="bg-slate-900 border border-slate-700 w-full max-w-sm rounded-3xl p-6 shadow-2xl relative animate-fade-in-down">
