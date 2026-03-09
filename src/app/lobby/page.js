@@ -4,10 +4,6 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase"; 
 
-// 🚀 إجبار Vercel على جلب بيانات حية دائماً
-export const revalidate = 0;
-export const dynamic = 'force-dynamic';
-
 export default function Lobby() {
   const router = useRouter();
   
@@ -16,6 +12,7 @@ export default function Lobby() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isLoading, setIsLoading] = useState(true);
 
+  // التأكد من وجود اسم اللاعب، وجلب الغرف
   useEffect(() => {
     const savedName = localStorage.getItem("darwaza_global_name");
     if (savedName) {
@@ -27,13 +24,14 @@ export default function Lobby() {
     fetchRooms();
 
     // 📡 تفعيل الرادار (Realtime) لمراقبة صالة الغرف فوراً
+    // هذا يغنينا عن استخدام revalidate لأنه يحدث الصفحة تلقائياً
     const channel = supabase
       .channel('lobby-updates')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms' }, () => {
-        fetchRooms(); // إعادة جلب الغرف عند حدوث أي تغيير (إضافة/حذف/تعديل)
+        fetchRooms(); 
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'players' }, () => {
-        fetchRooms(); // إعادة جلب الغرف لو تغير عدد اللاعبين داخلها
+        fetchRooms(); 
       })
       .subscribe();
 
@@ -42,9 +40,10 @@ export default function Lobby() {
     };
   }, [router]);
 
+  // دالة جلب الغرف وتصفيتها
   const fetchRooms = async () => {
     try {
-      // 🚀 جلب الغرف التي أنشئت في آخر 24 ساعة لضمان ظهور كل شيء جديد
+      // جلب الغرف التي أنشئت في آخر 24 ساعة لضمان الحداثة
       const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
       const { data, error } = await supabase
@@ -62,7 +61,6 @@ export default function Lobby() {
             playerCount: activePlayers.length, 
           };
         })
-        // أظهرنا الغرف حتى لو كانت 0 لاعبين عشان تقدر تنضم لها
         .sort((a, b) => {
           if (a.playerCount !== b.playerCount) {
             return a.playerCount - b.playerCount;
@@ -163,4 +161,4 @@ export default function Lobby() {
       </div>
     </div>
   );
-}    
+}
