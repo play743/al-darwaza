@@ -12,7 +12,7 @@ import PlayersListModal from "../../../components/PlayersListModal";
 import AdminModal from "../../../components/AdminModal";
 import ProfileModal from "../../../components/ProfileModal";
 
-// 🚀 تجهيز الأصوات برمجياً خارج المكون عشان تشتغل بسلاسة
+// 🚀 تجهيز الأصوات برمجياً خارج المكون
 let winAudio = null;
 let loseAudio = null;
 if (typeof window !== 'undefined') {
@@ -92,7 +92,6 @@ export default function GameBoard() {
   const [gameLogs, setGameLogs] = useState([]);
   const [customPackText, setCustomPackText] = useState("");
   
-  // 🚀 حالة زر النسخ/المشاركة
   const [isCopied, setIsCopied] = useState(false);
 
   const availableEmojis = ["🇸🇦","🇰🇼","🎮","🐲","🌑","🪐","🌧️","😤","🥳","🥲","☠️","🤌🏼","👤","🧘‍♂️","⛹️","🤽","🎤","🎧","🛵","🚀","🗿","🚦","🌃","🏞️","📱","🖥️","⌚️","⏳","🪫","💡","🪤","🪓","🩺","🦠","🪭","🦅","🐢","🕸️"];
@@ -113,7 +112,6 @@ export default function GameBoard() {
   const autoJoinAttempted = useRef(false);
   const lastNotifiedTurn = useRef(null);
 
-  // 🚀 خدعة فك حظر الصوت في المتصفحات
   useEffect(() => {
     const unlockAudio = () => {
       if (winAudio && loseAudio) {
@@ -221,6 +219,12 @@ export default function GameBoard() {
       setUserRole(pData.role || 'spectator');
       setUserName(pData.name);
       setUserEmoji(pData.emoji || '🎮');
+      
+      setRoomPlayers(prev => {
+        const exists = prev.find(p => p.id === pData.id);
+        if (exists) return prev.map(p => p.id === pData.id ? { ...p, ...pData, is_online: true } : p);
+        return [...prev, { ...pData, is_online: true }];
+      });
     }
 
     const { data: existingRoom } = await supabase.from('rooms').select('*').eq('id', roomId).maybeSingle();
@@ -278,7 +282,7 @@ export default function GameBoard() {
     if (!localPlayerId) return;
     const setOffline = async () => { await supabase.from('players').update({ is_online: false }).eq('id', localPlayerId); };
     window.addEventListener('beforeunload', setOffline);
-    return () => { window.removeEventListener('beforeunload', setOffline); setOffline(); };
+    return () => { window.removeEventListener('beforeunload', setOffline); };
   }, [localPlayerId]);
 
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [gameLogs]);
@@ -293,8 +297,9 @@ export default function GameBoard() {
     return () => clearInterval(interval);
   }, [timerEndsAt, timerDuration]);
 
+  // 🚀 تحديث جذري لدالة الاستماع عشان تسحب الجميع للمشاهدة فوراً عند الإعادة
   useEffect(() => {
-    if (!isJoined || !roomId) return;
+    if (!isJoined || !roomId || !localPlayerId) return;
     const fetchRoomData = async () => {
       try {
         const { data: players } = await supabase.from('players').select('*').eq('room_id', roomId);
@@ -333,14 +338,23 @@ export default function GameBoard() {
         if (d.board_colors) setWordColors(d.board_colors); if (d.board_nominations) setNominations(d.board_nominations); else setNominations({});
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'players', filter: `room_id=eq.${roomId}` }, () => {
-        supabase.from('players').select('*').eq('room_id', roomId).then(({ data }) => { if (data) setRoomPlayers(data); });
+        supabase.from('players').select('*').eq('room_id', roomId).then(({ data }) => { 
+          if (data) {
+            setRoomPlayers(data); 
+            // 🚀 التزامن اللحظي لحالة اللاعب: لو أُجبر على المشاهدة بسبب زر الإعادة، ينفذ فوراً عنده
+            const me = data.find(p => p.id === localPlayerId);
+            if (me) {
+              setUserTeam(me.team);
+              setUserRole(me.role);
+            }
+          }
+        });
       })
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [roomId, isJoined]);
+  }, [roomId, isJoined, localPlayerId]);
 
-  // 🚀 دالة مشاركة الروم الذكية 
   const handleShareRoom = async () => {
     const roomLink = window.location.href; 
     
@@ -384,13 +398,17 @@ export default function GameBoard() {
     await supabase.from('rooms').update({ pinned_spectators: newPinned }).eq('id', roomId);
   };
 
+  // 🚀 حل مشكلة المالك (إجبار حالة is_online: true) لضمان ظهوره
   const quickJoin = async (targetTeam, targetRole) => {
     if (isRoomLocked && !isOwner) return alert("الروم مقفلة، ما تقدر تنضم! 🔒");
     if (pinnedSpectators.includes(localPlayerId)) return alert("المالك ثبتك كمشاهد، ما تقدر تلعب! 📌");
     let finalRole = targetRole;
     if (userRole === 'master' && targetRole === 'decoder') { alert("حركات نص كم! 👀 شفت الكلمات كمشفر تبي ترجع مفكك؟ بنرجعك مشفر تلقائياً 👑"); finalRole = 'master'; }
-    await supabase.from('players').update({ team: targetTeam, role: finalRole }).eq('id', localPlayerId);
+    
+    await supabase.from('players').update({ team: targetTeam, role: finalRole, is_online: true }).eq('id', localPlayerId);
     setUserTeam(targetTeam); setUserRole(finalRole);
+    setRoomPlayers(prev => prev.map(p => p.id === localPlayerId ? { ...p, team: targetTeam, role: finalRole, is_online: true } : p));
+
     const teamName = targetTeam === 'blue' ? 'الدهاة' : 'الجهابذة';
     const roleTitle = finalRole === 'master' ? 'مُشفر' : 'مفكك';
     addGameLog(`انضم ${userName} سريعاً لفريق ${teamName} كـ ${roleTitle} ⚡`, targetTeam);
@@ -438,6 +456,7 @@ export default function GameBoard() {
     addGameLog(newStatus ? `👑 تم ترقية ${targetName} إلى مشرف!` : `🔻 تم سحب الإشراف من ${targetName}`, 'none');
   };
 
+  // 🚀 التحديث لتصفير الجولة وطرد الجميع للمشاهدة
   const resetBoardWithWords = async (newWords) => {
     const isBlueStarting = Math.random() > 0.5;
     const blueCount = isBlueStarting ? 9 : 8; const redCount = isBlueStarting ? 8 : 9; const startingTurn = isBlueStarting ? 'blue' : 'red';
@@ -446,11 +465,21 @@ export default function GameBoard() {
     
     document.body.classList.remove('win-filter', 'lose-filter', 'shake-screen-hard');
 
+    // 1. تصفير لوحة اللعب
     await supabase.from('rooms').update({
       board_words: words, board_colors: colors, board_revealed: Array(25).fill(false), board_nominations: {}, winner_team: null,
       blue_score: blueCount, red_score: redCount, current_turn: startingTurn, game_phase: 'hinting', timer_ends_at: null, hint_word: '', hint_count: 0
     }).eq('id', roomId);
-    addGameLog(`تم بدء جولة جديدة 🔄`, 'none');
+    
+    // 2. إرجاع الكل للمشاهدة
+    await supabase.from('players').update({ team: 'none', role: 'spectator' }).eq('room_id', roomId);
+
+    // تحديث الواجهة فوراً للمالك اللي ضغط الزر
+    setUserTeam('none');
+    setUserRole('spectator');
+    setRoomPlayers(prev => prev.map(p => ({ ...p, team: 'none', role: 'spectator' })));
+
+    addGameLog(`تم بدء جولة جديدة 🔄 وعاد الجميع للمشاهدة 🍿`, 'none');
   };
 
   const handleFileUpload = (e) => {
@@ -480,14 +509,18 @@ export default function GameBoard() {
     setIsEditModalOpen(true);
   };
 
+  // 🚀 حل مشكلة المالك (إجبار حالة is_online: true) في الحفظ
   const saveProfile = async () => {
     if (!editName.trim() || !localPlayerId) return;
     let finalRole = editRole; let finalTeam = editTeam;
     if (pinnedSpectators.includes(localPlayerId)) finalTeam = 'none';
     if (userRole === 'master' && finalRole === 'decoder') finalRole = 'master';
     if (finalTeam === 'none') finalRole = userRole === 'master' ? 'master' : 'spectator'; else if (finalRole === 'spectator') finalRole = 'decoder';
-    await supabase.from('players').update({ name: editName, emoji: editEmoji, team: finalTeam, role: finalRole }).eq('id', localPlayerId);
+    
+    await supabase.from('players').update({ name: editName, emoji: editEmoji, team: finalTeam, role: finalRole, is_online: true }).eq('id', localPlayerId);
     setUserName(editName); setUserEmoji(editEmoji); setUserTeam(finalTeam); setUserRole(finalRole); setIsEditModalOpen(false);
+
+    setRoomPlayers(prev => prev.map(p => p.id === localPlayerId ? { ...p, name: editName, emoji: editEmoji, team: finalTeam, role: finalRole, is_online: true } : p));
   };
 
   const saveAdminSettings = async (newSettings) => {
@@ -642,7 +675,7 @@ export default function GameBoard() {
           </div>
         )}
 
-        {/* 🚀 الهيدر العلوي وفيه زر المشاركة */}
+        {/* 🚀 الهيدر العلوي */}
         <div className="w-full max-w-2xl bg-slate-900 border border-slate-800 p-3 rounded-2xl shadow-sm flex flex-wrap justify-between items-center gap-y-3 gap-x-2 mx-2 relative z-40">
           <div className="flex items-center gap-1.5 sm:gap-2 w-auto relative">
              <div className={`px-2 sm:px-3 py-1.5 rounded-xl text-[9px] sm:text-[10px] font-bold uppercase bg-[#020617] border border-slate-800 ${currentTurn === 'blue' ? 'text-blue-400' : 'text-red-400'}`}>
