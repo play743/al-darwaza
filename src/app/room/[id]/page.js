@@ -964,4 +964,4 @@ export default function GameBoard() {
       <ProfileModal isOpen={isEditModalOpen} onClose={() => setIsEditModalOpen(false)} editName={editName} setEditName={setEditName} allowNameChange={allowNameChange} isOwner={isOwner} availableEmojis={availableEmojis} editEmoji={editEmoji} setEditEmoji={setEditEmoji} isRoomLocked={isRoomLocked} userTeam={userTeam} pinnedSpectators={pinnedSpectators} localPlayerId={localPlayerId} editTeam={editTeam} setEditTeam={setEditTeam} userRole={userRole} editRole={editRole} setEditRole={setEditRole} saveProfile={saveProfile} />
     </div>
   );
-}
+} 
