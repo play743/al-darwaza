@@ -35,7 +35,6 @@ export default function Lobby() {
         // 🚀 أضفنا created_at عشان نقدر نفرز بالأقدمية
         .select("id, name, status, created_at, players(id, is_online)")
         .eq("status", "waiting") 
-        .gte("created_at", twelveHoursAgo) // 🚀 فلتر يخفي أي غرفة زومبي أقدم من 12 ساعة
         .order("created_at", { ascending: false })
         .limit(50);
 
