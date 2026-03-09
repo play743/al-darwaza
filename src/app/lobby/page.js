@@ -4,6 +4,10 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase"; 
 
+// 🚀 إجبار Vercel على جلب بيانات حية دائماً
+export const revalidate = 0;
+export const dynamic = 'force-dynamic';
+
 export default function Lobby() {
   const router = useRouter();
   
@@ -12,7 +16,6 @@ export default function Lobby() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isLoading, setIsLoading] = useState(true);
 
-  // التأكد من وجود اسم اللاعب، وجلب الغرف
   useEffect(() => {
     const savedName = localStorage.getItem("darwaza_global_name");
     if (savedName) {
@@ -20,38 +23,49 @@ export default function Lobby() {
     } else {
       router.push("/");
     }
+    
     fetchRooms();
+
+    // 📡 تفعيل الرادار (Realtime) لمراقبة صالة الغرف فوراً
+    const channel = supabase
+      .channel('lobby-updates')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms' }, () => {
+        fetchRooms(); // إعادة جلب الغرف عند حدوث أي تغيير (إضافة/حذف/تعديل)
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'players' }, () => {
+        fetchRooms(); // إعادة جلب الغرف لو تغير عدد اللاعبين داخلها
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [router]);
 
-  // دالة جلب الغرف وتصفيتها (إخفاء الغرف المهجورة + الفرز الذكي)
   const fetchRooms = async () => {
-    setIsLoading(true);
     try {
-      // 🚀 حددنا وقت (قبل 12 ساعة) عشان نتجاهل غرف الاختبار القديمة والمعلقة
-      const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
+      // 🚀 جلب الغرف التي أنشئت في آخر 24 ساعة لضمان ظهور كل شيء جديد
+      const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
       const { data, error } = await supabase
         .from("rooms")
-        // 🚀 أضفنا created_at عشان نقدر نفرز بالأقدمية
         .select("id, name, status, created_at, players(id, is_online)")
         .eq("status", "waiting") 
-        .order("created_at", { ascending: false })
-        .limit(50);
+        .gte("created_at", oneDayAgo)
+        .order("created_at", { ascending: false });
 
       if (data) {
         const formattedRooms = data.map((room) => {
-          // حساب اللاعبين المتصلين فقط
           const activePlayers = room.players ? room.players.filter(p => p.is_online === true) : [];
           return {
             ...room,
             playerCount: activePlayers.length, 
           };
         })
-        .filter(room => room.playerCount > 0) // إخفاء أي روم ما فيها أحد متصل
-        // 🚀 خوارزمية الفرز الذكي: العدد الأقل أولاً، وإذا تساووا الأحدث أولاً
+        // أظهرنا الغرف حتى لو كانت 0 لاعبين عشان تقدر تنضم لها
         .sort((a, b) => {
           if (a.playerCount !== b.playerCount) {
-            return a.playerCount - b.playerCount; // العدد الأقل فوق عشان يكتملون
+            return a.playerCount - b.playerCount;
           }
           return new Date(b.created_at) - new Date(a.created_at);
         });
