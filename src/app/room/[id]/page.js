@@ -99,7 +99,9 @@ export default function GameBoard() {
 
   const [roomPlayers, setRoomPlayers] = useState([]);
   const [hintWord, setHintWord] = useState(""); 
+  const EXTRA_GUESSES = 1; // 🚀 عدد المحاولات الإضافية (تقدر تخليها 2 لو تبي)
   const [hintCount, setHintCount] = useState(0); 
+  const [guessesMade, setGuessesMade] = useState(0); // 🚀 عداد التخمينات
   const [hintInput, setHintInput] = useState("");
   const [currentWords, setCurrentWords] = useState([]);
   const [revealedWords, setRevealedWords] = useState(Array(25).fill(false)); 
@@ -417,7 +419,7 @@ export default function GameBoard() {
           setBlueWins(room.blue_wins ?? 0); setRedWins(room.red_wins ?? 0);
           setCurrentTurn(room.current_turn ?? 'blue'); setGamePhase(room.game_phase ?? 'hinting');
           setWinnerTeam(room.winner_team ?? null);
-          setHintWord(room.hint_word ?? ''); setHintCount(room.hint_count ?? 0); setGameLogs(room.logs ?? []); setRoomOwnerId(room.owner_id);
+          setHintWord(room.hint_word ?? ''); setHintCount(room.hint_count ?? 0); setGuessesMade(room.guesses_made ?? 0); setGameLogs(room.logs ?? []); setRoomOwnerId(room.owner_id);
           setIsRoomLocked(room.is_locked ?? false); setAllowNameChange(room.allow_name_change ?? true); setTimerDuration(room.timer_duration ?? 0);
           setTimerEndsAt(room.timer_ends_at ?? null); setPinnedSpectators(room.pinned_spectators ?? []);
           if (room.board_words) setCurrentWords(room.board_words); if (room.board_colors) setWordColors(room.board_colors);
@@ -437,7 +439,7 @@ export default function GameBoard() {
         setBlueWins(d.blue_wins ?? 0); setRedWins(d.red_wins ?? 0);
         setCurrentTurn(d.current_turn ?? 'blue'); setGamePhase(d.game_phase ?? 'hinting');
         setWinnerTeam(d.winner_team ?? null);
-        setHintWord(d.hint_word ?? ''); setHintCount(d.hint_count ?? 0); setGameLogs(d.logs ?? []); setRoomOwnerId(d.owner_id);
+        setHintWord(d.hint_word ?? ''); setHintCount(d.hint_count ?? 0); setGuessesMade(d.guesses_made ?? 0); setGameLogs(d.logs ?? []); setRoomOwnerId(d.owner_id);
         setIsRoomLocked(d.is_locked ?? false); setAllowNameChange(d.allow_name_change ?? true); setTimerDuration(d.timer_duration ?? 0); setTimerEndsAt(d.timer_ends_at ?? null);
         setPinnedSpectators(d.pinned_spectators ?? []);
         if (d.board_revealed) setRevealedWords(d.board_revealed); if (d.board_words) setCurrentWords(d.board_words);
@@ -537,7 +539,7 @@ export default function GameBoard() {
 
     const teamName = targetTeam === 'blue' ? 'الدهاة' : 'الجهابذة';
     const roleTitle = finalRole === 'master' ? 'مشفر' : 'مفكك';
-    addGameLog(userName, `انضم ${teamName} ${roleTitle} ⚡`, targetTeam, 'normal');
+    addGameLog(userName, `انضم لفريق ${teamName} كـ ${roleTitle} ⚡`, targetTeam, 'normal');
   };
 
   const skipTurn = async () => {
@@ -552,6 +554,7 @@ export default function GameBoard() {
       game_phase: "hinting",
       hint_word: "",
       hint_count: 0,
+      guesses_made: 0, // 🚀 تصفير العداد عند تخطي الدور
       timer_ends_at: currentTimerEndsAt,
       board_nominations: {} 
     }).eq('id', roomId);
@@ -596,9 +599,8 @@ export default function GameBoard() {
 
     await supabase.from('rooms').update({
       board_words: words, board_colors: colors, board_revealed: Array(25).fill(false), board_nominations: {}, winner_team: null,
-      blue_score: blueCount, red_score: redCount, current_turn: startingTurn, game_phase: 'hinting', timer_ends_at: currentTimerEndsAt, hint_word: '', hint_count: 0
+      blue_score: blueCount, red_score: redCount, current_turn: startingTurn, game_phase: 'hinting', timer_ends_at: currentTimerEndsAt, hint_word: '', hint_count: 0, guesses_made: 0
     }).eq('id', roomId);
-    
     await supabase.from('players').update({ team: 'none', role: 'spectator' }).eq('room_id', roomId);
 
     setUserTeam('none');
@@ -715,6 +717,7 @@ export default function GameBoard() {
       let newBlue = blueScore; let newRed = redScore; let newTurn = currentTurn; let newPhase = gamePhase;
       let winningTeam = null;
       let newBlueWins = blueWins; let newRedWins = redWins;
+      let newGuessesMade = guessesMade; // 🚀 1. نسحب العداد الحالي
 
       if (actualColor === "bg-black") {
         winningTeam = currentTurn === "blue" ? "red" : "blue";
@@ -722,25 +725,39 @@ export default function GameBoard() {
         newPhase = "ended";
         if (winningTeam === 'blue') newBlueWins += 1; else newRedWins += 1;
       } else {
+        const isCorrect = actualColor === (currentTurn === "blue" ? "bg-blue-600" : "bg-red-600");
+        
         if (actualColor === "bg-blue-600") newBlue = Math.max(0, blueScore - 1);
         else if (actualColor === "bg-red-600") newRed = Math.max(0, redScore - 1);
         
-        const isCorrect = actualColor === (currentTurn === "blue" ? "bg-blue-600" : "bg-red-600");
         addGameLog(userName, `اختار "${wordText}" اجابة ${isCorrect ? 'صحيحة ✅' : 'خاطئة ❌'}`, currentTurn, 'normal');
 
         if (newBlue === 0) { winningTeam = 'blue'; newPhase = "ended"; newBlueWins += 1; }
         else if (newRed === 0) { winningTeam = 'red'; newPhase = "ended"; newRedWins += 1; }
         else if (!isCorrect) {
+          // خطأ = يروح الدور
           newTurn = currentTurn === "blue" ? "red" : "blue"; 
           newPhase = "hinting";
+        } else {
+          // 🚀 2. الإجابة صحيحة: نزيد العداد ونتأكد هل تجاوزوا الحد المسموح؟
+          newGuessesMade += 1;
+          const maxAllowedGuesses = hintCount === 99 ? 99 : hintCount + EXTRA_GUESSES;
+          
+          if (newGuessesMade >= maxAllowedGuesses && hintCount !== 99) {
+            newTurn = currentTurn === "blue" ? "red" : "blue"; 
+            newPhase = "hinting";
+            addGameLog("النظام", `انتهت محاولات ${currentTurn === 'blue' ? 'الدهاة' : 'الجهابذة'} 🛑`, "none", "gray");
+          }
         }
       }
 
       let finalNoms = newNoms;
       let currentTimerEndsAt = timerEndsAt;
 
+      // 🚀 3. إذا انتهى الدور لأي سبب نصفر العداد
       if (newTurn !== currentTurn || newPhase !== "guessing") {
         finalNoms = {};
+        newGuessesMade = 0; 
         if (newPhase === "ended") {
           currentTimerEndsAt = null;
         } else if (timerDuration > 0) {
@@ -755,7 +772,8 @@ export default function GameBoard() {
         current_turn: newTurn, game_phase: newPhase, winner_team: winningTeam,
         timer_ends_at: currentTimerEndsAt, 
         hint_word: newPhase === "hinting" || newPhase === "ended" ? "" : hintWord, 
-        hint_count: newPhase === "hinting" || newPhase === "ended" ? 0 : hintCount
+        hint_count: newPhase === "hinting" || newPhase === "ended" ? 0 : hintCount,
+        guesses_made: newGuessesMade // 🚀 4. نرسل العداد لقاعدة البيانات
       }).eq('id', roomId);
     }
   };
@@ -774,7 +792,8 @@ export default function GameBoard() {
          hint_word: hintInput.trim(), 
          hint_count: finalCount, 
          game_phase: "guessing", 
-         timer_ends_at: currentTimerEndsAt 
+         timer_ends_at: currentTimerEndsAt,
+         guesses_made: 0 // 🚀 تصفير العداد مع كل شفرة جديدة
       }).eq('id', roomId);
 
       if (error) return alert("حدث خطأ في الشبكة، لم يتم إرسال الشفرة.");
