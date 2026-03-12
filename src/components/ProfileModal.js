@@ -1,124 +1,130 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 
-export default function ProfileModal({ 
-  isOpen, onClose, editName, setEditName, allowNameChange, isOwner, 
-  availableEmojis, editEmoji, setEditEmoji, isRoomLocked, userTeam, 
-  pinnedSpectators, localPlayerId, editTeam, setEditTeam, userRole, 
-  editRole, setEditRole, saveProfile 
+export default function ProfileModal({
+  isOpen, onClose, editName, setEditName, allowNameChange, isOwner,
+  availableEmojis, editEmoji, setEditEmoji, isRoomLocked,
+  userTeam, pinnedSpectators, localPlayerId,
+  editTeam, setEditTeam, userRole, editRole, setEditRole, saveProfile
 }) {
-  
-  // حالة جديدة للتحكم بإظهار/إخفاء الخيارات الإضافية
-  const [showAdvanced, setShowAdvanced] = useState(false);
-
-  // تصفير الحالة كل مرة يفتح فيها المربع عشان يرجع صغير
-  useEffect(() => {
-    if (isOpen) setShowAdvanced(false);
-  }, [isOpen]);
+  // 🚀 حالة جديدة للتحكم في إظهار أو إخفاء الإيموجيات
+  const [showMore, setShowMore] = useState(false);
 
   if (!isOpen) return null;
 
-  // 🚀 حركة تسريع الإغلاق (Optimistic UI Update)
-  // راح نقفل النافذة فوراً، والداتا بتنحفظ في الخلفية بدون ما ينتظر اللاعب
-  const handleFastSave = () => {
-    saveProfile(); // إرسال أمر الحفظ للسيرفر
-    onClose();     // إغلاق النافذة بوجه اللاعب فوراً عشان يحس بالسرعة ⚡
-  };
+  const isPinned = pinnedSpectators.includes(localPlayerId);
 
   return (
-    <div className="fixed inset-0 z-[6000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-      {/* 🚀 صغرنا المربع هنا (max-w-xs بدال max-w-sm) */}
-      <div className="bg-slate-900 border border-slate-700 w-full max-w-xs rounded-3xl p-5 shadow-2xl relative transition-all duration-300">
-        
-        <h3 className="text-lg font-black text-teal-400 mb-4 text-center">ملفي 👤</h3>
-        
-        <div className="space-y-4">
-          
-          {/* مربع الاسم (يظهر دائماً) */}
-          <div className="flex flex-col gap-1.5">
-            <label className="text-[10px] text-slate-400 font-bold px-1">اسم اللاعب</label>
-            <input 
-              type="text" 
-              value={editName} 
-              onChange={(e) => setEditName(e.target.value)} 
+    <div className="fixed inset-0 z-[6000] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 text-right" dir="rtl">
+      <div className="bg-slate-900 border border-slate-700 w-full max-w-sm sm:max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+
+        {/* الهيدر */}
+        <div className="flex justify-between items-center p-4 border-b border-slate-800 bg-slate-900/80">
+          <h3 className="text-base sm:text-lg font-black text-teal-400">ملفي الشخصي 👤</h3>
+          <button onClick={() => { onClose(); setShowMore(false); }} className="text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 w-7 h-7 rounded-full flex items-center justify-center transition-colors text-xs">
+            ✕
+          </button>
+        </div>
+
+        {/* المحتوى */}
+        <div className="p-4 overflow-y-auto space-y-4 hide-scroll" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+          <style>{`.hide-scroll::-webkit-scrollbar { display: none; }`}</style>
+
+          {/* 1. الاسم */}
+          <div>
+            <label className="block text-[10px] font-bold text-slate-400 mb-1.5 px-1">اسمك باللعبة</label>
+            <input
+              type="text"
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
               disabled={!allowNameChange && !isOwner}
-              className="w-full bg-[#020617] border border-slate-700 rounded-xl px-4 py-2.5 text-sm font-black text-white text-right focus:border-teal-500 outline-none disabled:opacity-50 transition-colors"
+              className={`w-full bg-[#020617] border rounded-xl p-3 text-xs font-black outline-none transition-colors ${!allowNameChange && !isOwner ? 'border-slate-800 text-slate-500 cursor-not-allowed' : 'border-slate-700 text-slate-200 focus:border-teal-500'}`}
+              placeholder="اكتب اسمك هنا..."
             />
+            {!allowNameChange && !isOwner && (
+              <p className="text-[8px] text-red-400 mt-1 font-bold px-1">المشرف منع تغيير الأسماء حالياً 🔒</p>
+            )}
           </div>
 
-          {/* زر الإظهار والإخفاء */}
-          {!showAdvanced ? (
+          {/* 2. الفريق */}
+          <div>
+            <label className="block text-[10px] font-bold text-slate-400 mb-1.5 px-1">اختيار الفريق</label>
+            {isPinned ? (
+              <div className="bg-amber-900/20 border border-amber-900/50 p-3 rounded-xl text-center">
+                <span className="text-[11px] font-black text-amber-500">أنت مثبت كمشاهد 📌 لا يمكنك تغيير فريقك</span>
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 gap-2">
+                <button onClick={() => setEditTeam('blue')} className={`p-2 rounded-xl text-[10px] font-black transition-all border ${editTeam === 'blue' ? 'bg-blue-600 border-blue-500 text-white shadow-sm' : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700'}`}>
+                  الدهاة 🔵
+                </button>
+                <button onClick={() => setEditTeam('red')} className={`p-2 rounded-xl text-[10px] font-black transition-all border ${editTeam === 'red' ? 'bg-red-600 border-red-500 text-white shadow-sm' : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700'}`}>
+                  الجهابذة 🔴
+                </button>
+                <button onClick={() => setEditTeam('none')} className={`p-2 rounded-xl text-[10px] font-black transition-all border ${editTeam === 'none' ? 'bg-slate-600 border-slate-500 text-white shadow-sm' : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700'}`}>
+                  مشاهد 🍿
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* 3. الدور (يظهر فقط إذا اللاعب اختار فريق) */}
+          {editTeam !== 'none' && !isPinned && (
+            <div className="animate-in fade-in zoom-in duration-200">
+              <label className="block text-[10px] font-bold text-slate-400 mb-1.5 px-1">دورك في الفريق</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={() => setEditRole('master')} className={`p-2.5 rounded-xl text-[10px] font-black transition-all border ${editRole === 'master' ? 'bg-teal-600 border-teal-500 text-white shadow-sm' : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700'}`}>
+                  مُشفر 👑
+                </button>
+                <button onClick={() => setEditRole('decoder')} className={`p-2.5 rounded-xl text-[10px] font-black transition-all border ${editRole === 'decoder' ? 'bg-teal-600 border-teal-500 text-white shadow-sm' : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700'}`}>
+                  مُفكك 🔍
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* 🚀 زر عرض المزيد (لإظهار/إخفاء الإيموجيات) */}
+          <div className="border-t border-slate-800 pt-3 mt-2">
             <button 
-              onClick={() => setShowAdvanced(true)} 
-              className="w-full text-xs text-slate-400 hover:text-teal-400 py-1 font-bold underline decoration-dashed underline-offset-4 transition-colors"
+              onClick={() => setShowMore(!showMore)} 
+              className="w-full text-center text-[10px] font-bold text-slate-400 hover:text-teal-400 transition-colors flex items-center justify-center gap-1 p-1"
             >
-              عرض الخيارات المتقدمة (الفريق، الايموجي...) ⚙️
+              {showMore ? 'إخفاء الإيموجيات 🔼' : 'عرض الإيموجيات 🔽'}
             </button>
-          ) : (
-            <div className="space-y-4 animate-fade-in-down border-t border-slate-800 pt-4 mt-2">
-              
-              {/* قسم الايموجي */}
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] text-slate-400 font-bold px-1">اختر ايموجي</label>
-                <div className="flex flex-wrap gap-1.5 justify-center bg-[#020617] p-2 rounded-xl border border-slate-800 h-24 overflow-y-auto scrollbar-hide">
-                  {availableEmojis.map(emoji => (
-                    <span 
-                      key={emoji} 
-                      onClick={() => setEditEmoji(emoji)} 
-                      className={`text-xl cursor-pointer p-1 rounded-lg hover:bg-slate-800 transition-colors ${editEmoji === emoji ? 'bg-teal-900/50 border border-teal-500 scale-110 shadow-sm' : ''}`}
-                    >
-                      {emoji}
-                    </span>
-                  ))}
-                </div>
-              </div>
+          </div>
 
-              {/* قسم الفريق والدور */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-[10px] text-slate-400 font-bold px-1">الفريق</label>
-                  <select 
-                    value={editTeam} 
-                    onChange={(e) => setEditTeam(e.target.value)} 
-                    disabled={isRoomLocked && !isOwner}
-                    className="w-full bg-[#020617] border border-slate-700 rounded-xl px-2 py-2 text-[11px] font-bold text-white outline-none disabled:opacity-50 text-center"
+          {/* 4. الإيموجيات (مخفية افتراضياً وتظهر بالضغط) */}
+          {showMore && (
+            <div className="animate-in fade-in slide-in-from-top-2 duration-300">
+              <label className="block text-[10px] font-bold text-slate-400 mb-1.5 px-1 flex justify-between items-center">
+                <span>اختر الإيموجي المفضل لك</span>
+                <span className="text-xl bg-[#020617] rounded-lg p-1 border border-slate-700">{editEmoji}</span>
+              </label>
+              <div className="bg-[#020617] border border-slate-800 rounded-xl p-3 grid grid-cols-6 sm:grid-cols-8 gap-2">
+                {availableEmojis.map(emoji => (
+                  <button
+                    key={emoji}
+                    onClick={() => setEditEmoji(emoji)}
+                    className={`text-xl sm:text-2xl hover:scale-125 transition-transform ${editEmoji === emoji ? 'bg-slate-800 rounded-lg scale-110 shadow-sm' : ''}`}
                   >
-                    <option value="none">مشاهد 🍿</option>
-                    <option value="blue">الدهاة 🔵</option>
-                    <option value="red">الجهابذة 🔴</option>
-                  </select>
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-[10px] text-slate-400 font-bold px-1">الدور</label>
-                  <select 
-                    value={editRole} 
-                    onChange={(e) => setEditRole(e.target.value)} 
-                    disabled={(isRoomLocked && !isOwner) || editTeam === 'none'}
-                    className="w-full bg-[#020617] border border-slate-700 rounded-xl px-2 py-2 text-[11px] font-bold text-white outline-none disabled:opacity-50 text-center"
-                  >
-                    <option value="decoder">مفكك 🔍</option>
-                    <option value="master">مشفر 👑</option>
-                  </select>
-                </div>
+                    {emoji}
+                  </button>
+                ))}
               </div>
-
             </div>
           )}
 
         </div>
 
-        {/* 🚀 الأزرار تم تغيير اسم الزر ليصبح "حفظ" فقط */}
-        <div className="flex gap-2 mt-6">
+        {/* زر الحفظ */}
+        <div className="p-4 border-t border-slate-800 bg-slate-900/80 mt-auto">
           <button 
-            onClick={onClose} 
-            className="flex-1 bg-slate-800 text-slate-300 font-bold py-2.5 rounded-xl hover:bg-slate-700 transition-colors text-xs"
+            onClick={() => {
+              saveProfile();
+              setShowMore(false); // نسكر القائمة المنسدلة إذا حفظ عشان ترجع نظيفة للمرة الجاية
+            }} 
+            className="w-full bg-gradient-to-br from-teal-500 to-teal-700 text-white font-black py-3 rounded-xl shadow-lg hover:from-teal-400 hover:to-teal-600 transition-all active:scale-95 text-xs"
           >
-            إلغاء
-          </button>
-          <button 
-            onClick={handleFastSave} 
-            className="flex-1 bg-gradient-to-br from-teal-500 to-teal-700 hover:from-teal-400 hover:to-teal-600 text-white font-black py-2.5 rounded-xl transition-all shadow-lg active:scale-95 text-xs"
-          >
-            حفظ
+            حفظ التغييرات 💾
           </button>
         </div>
 

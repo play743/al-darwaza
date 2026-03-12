@@ -1,21 +1,170 @@
-import React from "react";
+import React, { useState } from 'react';
 
-export default function AddPackModal({ isOpen, onClose, handleFileUpload, customPackText, setCustomPackText, saveCustomPack }) {
+export default function AddPackModal({ isOpen, onClose, onSavePack }) {
+  const [packName, setPackName] = useState("");
+  const [packText, setPackText] = useState("");
+  const [saveLocal, setSaveLocal] = useState(true); // مفعل كافتراضي
+  const [savePublic, setSavePublic] = useState(false);
+
   if (!isOpen) return null;
 
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => setPackText(event.target.result);
+    reader.readAsText(file);
+  };
+
+  const handleSave = () => {
+    if (!packName.trim()) return alert("⚠️ الرجاء كتابة اسم الحزمة!");
+    const words = packText.split(/[\n,]+/).map(w => w.trim()).filter(w => w.length > 0);
+    if (words.length < 25) return alert(`⚠️ نحتاج 25 كلمة كحد أدنى. (الحالي: ${words.length})`);
+    if (!saveLocal && !savePublic) return alert("⚠️ لازم تختار مكان واحد على الأقل لحفظ الحزمة!");
+    
+    onSavePack(packName.trim(), words, saveLocal, savePublic);
+    
+    setPackName(""); setPackText(""); setSaveLocal(true); setSavePublic(false);
+  };
+
   return (
-    <div className="fixed inset-0 z-[4000] bg-[#020617]/80 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-slate-900 border border-slate-700 w-full max-w-sm rounded-[2rem] p-6 shadow-2xl flex flex-col gap-4">
-        <h3 className="text-slate-100 font-black text-sm uppercase text-center border-b border-slate-800 pb-3">إضافة حزمة 📦</h3>
-        <div className="flex flex-col gap-3">
-          <label className="text-xs font-bold bg-[#020617] p-3 rounded-xl text-center cursor-pointer border border-slate-700 text-teal-400 hover:border-teal-500 transition-colors">📂 رفع ملف (txt أو csv)<input type="file" accept=".txt,.csv" className="hidden" onChange={handleFileUpload} /></label>
-          <div className="text-center text-[10px] text-slate-500 font-black my-1">أو</div>
-          <textarea value={customPackText} onChange={(e) => setCustomPackText(e.target.value)} placeholder="اكتب الكلمات هنا، افصل بينها بفاصلة أو سطر جديد (أقل شيء 25 كلمة)" className="w-full h-32 bg-[#020617] border border-slate-700 rounded-xl p-3 text-xs font-bold outline-none resize-none text-slate-200 focus:border-teal-500 placeholder-slate-600"></textarea>
+    <div className="fixed inset-0 z-[6000] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" dir="rtl">
+      <div className="bg-slate-900 border border-slate-700 w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+        
+        {/* الهيدر */}
+        <div className="flex justify-between items-center p-4 border-b border-slate-800 bg-slate-900/80">
+          <h3 className="text-base sm:text-lg font-black text-teal-400">إضافة حزمة جديدة 📦</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 w-7 h-7 rounded-full flex items-center justify-center transition-colors text-xs">✕</button>
         </div>
-        <div className="flex gap-2 mt-2">
-          <button onClick={saveCustomPack} className="flex-1 bg-gradient-to-br from-teal-500 to-teal-700 text-white font-bold py-2.5 rounded-xl hover:from-teal-400 hover:to-teal-600 transition-colors">حفظ الحزمة</button>
-          <button onClick={onClose} className="flex-1 bg-slate-800 border border-slate-700 text-slate-300 font-bold py-2.5 rounded-xl hover:bg-slate-700 transition-colors">إلغاء</button>
+
+        {/* المحتوى */}
+        <div className="p-4 overflow-y-auto space-y-5 hide-scroll" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+          <style>{`.hide-scroll::-webkit-scrollbar { display: none; }`}</style>
+          
+          {/* اسم الحزمة */}
+          <div>
+            <label className="block text-[10px] font-bold text-slate-400 mb-1.5 px-1">اسم الحزمة</label>
+            <input 
+              type="text" 
+              value={packName}
+              onChange={(e) => setPackName(e.target.value)}
+              placeholder="مثال: حزمة الأنمي، كلمات كروية..." 
+              className="w-full bg-[#020617] border border-slate-700 rounded-xl p-3 text-xs font-bold text-slate-200 outline-none focus:border-teal-500 transition-colors"
+            />
+          </div>
+
+          {/* خيارات الحفظ المتعددة (Checkboxes) */}
+          <div>
+            <label className="block text-[10px] font-bold text-slate-400 mb-1.5 px-1">خيارات الحفظ (تقدر تختارهم كلهم)</label>
+            <div className="flex flex-col gap-2">
+              
+              {/* خيار الحفظ المحلي */}
+              <button 
+                onClick={() => setSaveLocal(!saveLocal)} 
+                className={`flex items-center justify-between p-3 rounded-xl border transition-all ${saveLocal ? 'bg-slate-800 border-teal-500 shadow-sm' : 'bg-[#020617] border-slate-800 opacity-60'}`}
+              >
+                <div className="flex items-center gap-3 text-right">
+                  <span className="text-lg">🔒</span>
+                  <div className="flex flex-col">
+                    <span className={`text-xs font-black ${saveLocal ? 'text-teal-400' : 'text-slate-400'}`}>مكتبتي الخاصة</span>
+                    <span className="text-[9px] font-bold text-slate-500">تنحفظ بجهازك وتلعبها بأي وقت</span>
+                  </div>
+                </div>
+                <div className={`w-5 h-5 rounded-md flex items-center justify-center border ${saveLocal ? 'bg-teal-500 border-teal-500 text-white' : 'bg-slate-800 border-slate-700'}`}>
+                  {saveLocal && '✓'}
+                </div>
+              </button>
+
+              {/* خيار النشر للعامة */}
+              <button 
+                onClick={() => setSavePublic(!savePublic)} 
+                className={`flex items-center justify-between p-3 rounded-xl border transition-all ${savePublic ? 'bg-teal-900/30 border-teal-500 shadow-sm' : 'bg-[#020617] border-slate-800 opacity-60'}`}
+              >
+                <div className="flex items-center gap-3 text-right">
+                  <span className="text-lg">🌍</span>
+                  <div className="flex flex-col">
+                    <span className={`text-xs font-black ${savePublic ? 'text-teal-400' : 'text-slate-400'}`}>المكتبة العامة</span>
+                    <span className="text-[9px] font-bold text-slate-500">ترسل للإدارة لتنزل لكل اللاعبين</span>
+                  </div>
+                </div>
+                <div className={`w-5 h-5 rounded-md flex items-center justify-center border ${savePublic ? 'bg-teal-500 border-teal-500 text-white' : 'bg-slate-800 border-slate-700'}`}>
+                  {savePublic && '✓'}
+                </div>
+              </button>
+
+            </div>
+          </div>
+
+          {/* الكلمات */}
+          <div>
+            <div className="flex justify-between items-end mb-1.5 px-1">
+              <label className="text-[10px] font-bold text-slate-400">الكلمات (يفصل بينها بـسطر جديد أو فاصلة )</label>
+              <label className="cursor-pointer text-[9px] bg-slate-800 hover:bg-slate-700 text-teal-400 px-2 py-1 rounded-lg border border-slate-700 transition-colors font-bold flex items-center gap-1 shadow-sm">
+                <span>رفع ملف txt</span>
+                <input type="file" accept=".txt" onChange={handleFileUpload} className="hidden" />
+              </label>
+            </div>
+            
+            <textarea 
+              value={packText}
+              onChange={(e) => setPackText(e.target.value)}
+              className="w-full h-32 bg-[#020617] border border-slate-700 rounded-xl p-3 text-xs font-bold text-slate-200 outline-none focus:border-teal-500 transition-colors resize-none leading-relaxed"
+              placeholder="تفاحة&#10;
+              
+              
+              
+              
+              
+              
+              
+              
+              
+              
+              
+              
+              
+              
+              
+              
+              
+              
+              
+              
+              
+              
+              
+              
+
+
+
+
+
+              
+              
+              
+              
+              سيارة&#10;..."
+            />
+            
+            <div className="mt-2 text-center text-[10px] font-black">
+              <span className={packText.split(/[\n,]+/).filter(w => w.trim()).length >= 25 ? 'text-green-500 bg-green-900/20 px-2 py-1 rounded-full' : 'text-red-400 bg-red-900/20 px-2 py-1 rounded-full'}>
+                عدد الكلمات: {packText.split(/[\n,]+/).filter(w => w.trim()).length} / 25
+              </span>
+            </div>
+          </div>
+
         </div>
+
+        {/* زر الحفظ */}
+        <div className="p-4 border-t border-slate-800 bg-slate-900/80">
+          <button 
+            onClick={handleSave} 
+            className="w-full bg-gradient-to-br from-teal-500 to-teal-700 text-white font-black py-3.5 rounded-xl shadow-lg hover:from-teal-400 hover:to-teal-600 transition-all active:scale-95 text-sm"
+          >
+            حفظ الحزمة 💾
+          </button>
+        </div>
+
       </div>
     </div>
   );
