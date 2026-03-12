@@ -62,6 +62,15 @@ export default function AdminModal({
     }
   };
 
+  // 🚀 الدالة الجديدة اللي أضفناها: زر إعادة الجولة السريع
+  const handleQuickRestart = () => {
+    if (window.confirm("متأكد تبي تنهي هذي الجولة وتبدأ جولة جديدة بكلمات مختلفة؟ 🤔")) {
+      const defaultPack = wordPacks.general ? wordPacks.general.words : Object.values(wordPacks)[0].words;
+      resetBoardWithWords(defaultPack);
+      onClose(); 
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-[6000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" dir="rtl">
       <div className="bg-slate-900 border border-slate-700 w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
@@ -77,6 +86,17 @@ export default function AdminModal({
         {/* المحتوى */}
         <div className="p-4 overflow-y-auto space-y-5 hide-scroll" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
           <style>{`.hide-scroll::-webkit-scrollbar { display: none; }`}</style>
+          
+          {/* 🚀 الزر الجديد اللي أضفناه هنا */}
+          <div>
+            <button 
+              onClick={handleQuickRestart}
+              className="w-full bg-gradient-to-br from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white font-black py-3 rounded-xl shadow-[0_0_15px_rgba(245,158,11,0.3)] transition-all active:scale-95 flex items-center justify-center gap-2"
+            >
+              <span>إعادة الجولة (كلمات جديدة)</span>
+              <span className="text-lg">🔄</span>
+            </button>
+          </div>
           
           {/* 1. إعدادات الوصول والقوانين */}
           <div>
@@ -167,7 +187,7 @@ export default function AdminModal({
 
           {/* 3. بدء جولة واختيار الحزم */}
           <div>
-            <h4 className="text-[9px] font-black text-slate-500 mb-2 px-1 uppercase tracking-widest">بدء جولة جديدة (اختيار الحزمة)</h4>
+           <h4 className="text-[9px] font-black text-slate-500 mb-2 px-1 uppercase tracking-widest">اختيار حزمة معينة للعب</h4>
             <div className="grid grid-cols-2 gap-2">
               
               {Object.entries(wordPacks).map(([key, pack]) => (

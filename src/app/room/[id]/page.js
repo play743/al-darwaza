@@ -65,6 +65,7 @@ export default function GameBoard() {
   const [isDataLoaded, setIsDataLoaded] = useState(false);
   const [showEndBanner, setShowEndBanner] = useState(false);
 
+
   const [roomOwnerId, setRoomOwnerId] = useState(null);
   const [isRoomLocked, setIsRoomLocked] = useState(false);
   const [allowNameChange, setAllowNameChange] = useState(true);
@@ -862,7 +863,13 @@ export default function GameBoard() {
         </div>
       )}
 
-      <div className="fixed top-0 left-0 w-screen h-screen bg-[#020617] z-[-1]"></div>
+      {/* 🚀 خلفية ثابتة تميل للأخضر الزمردي إذا كان دورك يالذيب */}
+      <div className={`fixed inset-0 z-0 transition-colors duration-1000 ${
+        (gamePhase === 'hinting' && currentTurn === userTeam && userRole === 'master') || 
+        (gamePhase === 'guessing' && currentTurn === userTeam && userRole === 'decoder') 
+          ? 'bg-[#25383C]' 
+          : 'bg-[#020617]'
+      }`}></div>
 
       <main className="w-full max-w-4xl mx-auto flex flex-col items-center px-2 sm:px-4 space-y-4 relative z-10">
         
