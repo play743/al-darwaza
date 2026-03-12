@@ -13,17 +13,24 @@ import ProfileModal from "../../../components/ProfileModal";
 
 let winAudio = null;
 let loseAudio = null;
+let turnAudio = null; // 🚀 متغير لصوت التنبيه الجديد
+
 if (typeof window !== 'undefined') {
   winAudio = new Audio('/sounds/win.mp3');
   loseAudio = new Audio('/sounds/lose.mp3');
+  turnAudio = new Audio('/sounds/turn.mp3'); // 🚀 مسار ملف تنبيه الدور
 }
 
 const playSound = (type) => {
     try {
-      const audio = type === 'win' ? winAudio : loseAudio;
+      let audio = null;
+      if (type === 'win') audio = winAudio;
+      else if (type === 'lose') audio = loseAudio;
+      else if (type === 'turn') audio = turnAudio; // 🚀 تحديد صوت الدور
+
       if (audio) {
           audio.currentTime = 0;
-          audio.volume = 0.5; 
+          audio.volume = type === 'turn' ? 0.7 : 0.5; // رفعنا صوت التنبيه شوي عشان ينسمع بوضوح
           audio.play().catch(e => console.log("المتصفح يحتاج تفاعل لتشغيل الصوت:", e));
       }
     } catch (error) {
@@ -76,7 +83,8 @@ export default function GameBoard() {
 
   const [localPlayerId, setLocalPlayerId] = useState(null);
   const [userName, setUserName] = useState("");
-  const [userEmoji, setUserEmoji] = useState("🎮"); 
+  const [userEmoji, setUserEmoji] = useState(""); // 🚀 الدخول بدون إيموجي
+  const emojiTimerRef = useRef(null); // 🚀 مخزن المؤقت عشان نمسح الإيموجي
   const [userTeam, setUserTeam] = useState("none"); 
   const [userRole, setUserRole] = useState("spectator"); 
   const [isJoined, setIsJoined] = useState(false);
@@ -195,20 +203,32 @@ export default function GameBoard() {
 
   useEffect(() => {
     if (!isJoined || userTeam === 'none' || typeof window === 'undefined') return;
-    if ("Notification" in window && Notification.permission === "granted") {
-      if (gamePhase === 'guessing' && currentTurn === userTeam && userRole === 'decoder' && hintWord) {
-        const notifId = `${currentTurn}-${hintWord}`;
-        if (lastNotifiedTurn.current !== notifId) {
-          new Notification('دورك يا بطل! 🕵️‍♂️', { body: `الشفرة وصلت: ${hintWord} (${hintCount === 99 ? '∞' : hintCount})` });
-          lastNotifiedTurn.current = notifId;
-        }
+    
+    // 🚀 دالة تشتغل أول ما يجي دورك (صوت + اهتزاز + إشعار لو مفعل)
+    const triggerTurnAlert = (title, body) => {
+      playSound('turn'); // 🔊 تشغيل رنة التنبيه
+      if (navigator.vibrate) navigator.vibrate([200, 100, 200]); // 📳 اهتزاز الجوال مرتين
+      if ("Notification" in window && Notification.permission === "granted") {
+        new Notification(title, { body }); // 📩 إرسال إشعار المتصفح
       }
-      if (gamePhase === 'hinting' && currentTurn === userTeam && userRole === 'master') {
-        const notifId = `${currentTurn}-hinting-${blueScore}-${redScore}`;
-        if (lastNotifiedTurn.current !== notifId) {
-          new Notification('دورك تشفر! 👑', { body: `اكتب الشفرة لفريقك عشان يخمنون` });
-          lastNotifiedTurn.current = notifId;
-        }
+    };
+
+    const isMyTurnAsDecoder = gamePhase === 'guessing' && currentTurn === userTeam && userRole === 'decoder' && hintWord;
+    const isMyTurnAsMaster = gamePhase === 'hinting' && currentTurn === userTeam && userRole === 'master';
+
+    if (isMyTurnAsDecoder) {
+      const notifId = `${currentTurn}-${hintWord}`;
+      if (lastNotifiedTurn.current !== notifId) {
+        triggerTurnAlert('دورك يا بطل! 🕵️‍♂️', `الشفرة وصلت: ${hintWord} (${hintCount === 99 ? '∞' : hintCount})`);
+        lastNotifiedTurn.current = notifId;
+      }
+    }
+
+    if (isMyTurnAsMaster) {
+      const notifId = `${currentTurn}-hinting-${blueScore}-${redScore}`;
+      if (lastNotifiedTurn.current !== notifId) {
+        triggerTurnAlert('دورك تشفر! 👑', `اكتب الشفرة لفريقك عشان يخمنون`);
+        lastNotifiedTurn.current = notifId;
       }
     }
   }, [gamePhase, currentTurn, userTeam, userRole, hintWord, hintCount, blueScore, redScore, isJoined]);
@@ -252,7 +272,7 @@ export default function GameBoard() {
     let pData = null;
 
     if (!currentPlayerId) {
-      const { data: newP } = await supabase.from('players').insert([{ room_id: roomId, name: targetName, emoji: "🎮", team: 'none', role: 'spectator', ip_address: ip, device_data: deviceData, is_online: true }]).select().single();
+      const { data: newP } = await supabase.from('players').insert([{ room_id: roomId, name: targetName, emoji: "", team: 'none', role: 'spectator', ip_address: ip, device_data: deviceData, is_online: true }]).select().single();
       currentPlayerId = newP.id;
       pData = newP;
       localStorage.setItem(`darwaza_player_${roomId}`, currentPlayerId);
@@ -268,7 +288,7 @@ export default function GameBoard() {
           localStorage.removeItem(`darwaza_player_${roomId}`); 
           return;
         }
-        const { data: fallbackP } = await supabase.from('players').insert([{ room_id: roomId, name: targetName, emoji: "🎮", team: 'none', role: 'spectator', ip_address: ip, device_data: deviceData, is_online: true }]).select().single();
+        const { data: fallbackP } = await supabase.from('players').insert([{ room_id: roomId, name: targetName, emoji: "", team: 'none', role: 'spectator', ip_address: ip, device_data: deviceData, is_online: true }]).select().single();
         currentPlayerId = fallbackP.id;
         pData = fallbackP;
         localStorage.setItem(`darwaza_player_${roomId}`, currentPlayerId);
@@ -281,7 +301,7 @@ export default function GameBoard() {
       setUserTeam(pData.team || 'none');
       setUserRole(pData.role || 'spectator');
       setUserName(pData.name);
-      setUserEmoji(pData.emoji || '🎮');
+      setUserEmoji(pData.emoji || '');
       
       setRoomPlayers(prev => {
         const exists = prev.find(p => p.id === pData.id);
@@ -680,6 +700,18 @@ export default function GameBoard() {
     setUserName(editName); setUserEmoji(editEmoji); setUserTeam(finalTeam); setUserRole(finalRole); setIsEditModalOpen(false);
 
     setRoomPlayers(prev => prev.map(p => p.id === localPlayerId ? { ...p, name: editName, emoji: editEmoji, team: finalTeam, role: finalRole, is_online: true } : p));
+
+    // 🚀 نظام التفاعل (الرياكشن) المؤقت
+    if (emojiTimerRef.current) clearTimeout(emojiTimerRef.current); // نلغي أي مؤقت قديم لو غير رأيه بسرعة
+    
+    if (editEmoji !== "") { 
+      emojiTimerRef.current = setTimeout(async () => {
+        // بعد 5 ثواني نمسح الإيموجي من قاعدة البيانات واللاعبين
+        await supabase.from('players').update({ emoji: "" }).eq('id', localPlayerId);
+        setUserEmoji(""); 
+        setRoomPlayers(prev => prev.map(p => p.id === localPlayerId ? { ...p, emoji: "" } : p));
+      }, 5000); // ⏱️ 5000 = 5 ثواني (إذا تبيها 5 دقايق بالضبط غير الرقم إلى 300000)
+    }
   };
 
   const saveAdminSettings = async (newSettings) => {
