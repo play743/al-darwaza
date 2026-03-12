@@ -46,6 +46,9 @@ export default function GameBoard() {
   const roomId = params?.id;
   const scrollRef = useRef(null);
 
+  // 🚀 مرجع ذكي لمعرفة حالة اللعبة السابقة (عشان نمنع تكرار الصوت مع التحديث)
+  const prevPhaseRef = useRef(null);
+
   const [wordPacks, setWordPacks] = useState({
     general: { name: "حزمة عامة 🌍", words: ["تفاحة", "فراولة", "بطيخ", "موز", "تمر", "كليجا", "طيارة", "سيارة", "دباب", "سيكل", "باص", "كتاب", "دفتر", "قلم حبر", "بحر", "بر", "مفتاح", "ريموت", "شجرة", "نخلة", "ساعة", "قمر", "شمس", "نجوم", "زحل", "المريخ", "نهر", "تراب", "رمل", "جبل", "مبنى", "برج", "مدرسة", "دوام", "عمل", "كرسي", "طاولة", "مقلمة", "شنطة", "دريشة", "مكيف", "دفاية", "ابجوره", "جوال", "ايباد", "لابتوب", "صورة", "فيديو", "صوت", "ضوء", "ملعب", "كورة", "مرمى", "حصان", "بعير", "فارس", "رحال", "قرية", "طريق", "شارع", "حاره", "حي", "خبز", "صامولي", "عجين", "مفرود", "حديقة", "ممشى", "نادي", "ونترلاند", "سماء", "سحب", "برق", "مطر", "غيث", "نظارة", "ليزر", "الرياض", "القصيم", "جده", "الكويت", "السعودية", "العراق", "موية", "ببسي", "فصفص", "كودرد", "خبيز"] },
     najd: { name: "كلمات شعبية", words: ["دلة", "ابريق", "فنجال", "بيالة", "قهوة", "شاهي", "طويق", "الدرعية", "عرضة", "سامري", "محالة", "بندق", "سيف", "خنجر", "جصة", "تمر", "كليجا", "وجار", "سجاد", "روشن", "منفاخ", "دبيازة", "جريش", "رز", "قرصان", "مرقوق", "مصابيب", "حنيني", "شقراء", "بكة", "المدينة المنورة", "نقاء", "العرفج", "الرمث", "القحيوان", "نفود", "خيمة", "زير", "عج", "غيث", "خرازة", "المعزب", "ذبيحة", "بعير", "ناقى", "حليب", "الحكاكة", "السكة", "السيارة", "مصقاع", "مرود", "مبرد", "ملقاط", "مذود", "جمر", "حطب", "غضارة", "مشلح", "محزم", "مطرقة", "مبخرة", "حصني", "ضبع", "المربعانية", "الوسم", "سهيل", "نجر", "مهفة", "نار", "الدراعة", "الدقلة", "الحايك"] }
@@ -110,7 +113,6 @@ export default function GameBoard() {
   const autoJoinAttempted = useRef(false);
   const lastNotifiedTurn = useRef(null);
 
-  // 🚀 مرجع المزامنة العالمية للوقت (عشان نحل مشكلة اختلاف الساعات بين الجوال واللابتوب)
   const serverTimeOffsetRef = useRef(0);
 
   useEffect(() => {
@@ -126,14 +128,12 @@ export default function GameBoard() {
       } catch(e) {}
     };
     syncTime();
-    const syncInterval = setInterval(syncTime, 60000); // تحديث المزامنة كل دقيقة
+    const syncInterval = setInterval(syncTime, 60000); 
     return () => clearInterval(syncInterval);
   }, []);
 
-  // 🚀 دالة ذكية تجيب الوقت الموحد لكل الأجهزة
   const getTrueTime = () => Date.now() + serverTimeOffsetRef.current;
 
-  // حساسات السكرول الذكي والرادار
   const [isScrolledUp, setIsScrolledUp] = useState(false);
   const [unreadLogs, setUnreadLogs] = useState(0);
   const loggedNominationsRef = useRef("");
@@ -173,23 +173,6 @@ export default function GameBoard() {
       setUnreadLogs(prev => prev + 1);
     }
   }, [gameLogs]);
-
-  useEffect(() => {
-    const unlockAudio = () => {
-      if (winAudio && loseAudio) {
-         winAudio.play().then(() => { winAudio.pause(); winAudio.currentTime = 0; }).catch(()=>{});
-         loseAudio.play().then(() => { loseAudio.pause(); loseAudio.currentTime = 0; }).catch(()=>{});
-      }
-      document.removeEventListener('click', unlockAudio);
-      document.removeEventListener('touchstart', unlockAudio);
-    };
-    document.addEventListener('click', unlockAudio);
-    document.addEventListener('touchstart', unlockAudio);
-    return () => {
-      document.removeEventListener('click', unlockAudio);
-      document.removeEventListener('touchstart', unlockAudio);
-    };
-  }, []);
 
   const shuffleArray = (array) => {
     let shuffled = [...array];
@@ -247,11 +230,9 @@ export default function GameBoard() {
     if (!targetName.trim() || !roomId) return;
     setIsJoiningUI(true);
 
-    // 🚀 1. التحقق من حالة الروم أولاً قبل استهلاك أي موارد أو تسجيل الدخول
     const { data: roomCheck } = await supabase.from('rooms').select('is_locked').eq('id', roomId).maybeSingle();
     let currentPlayerId = localStorage.getItem(`darwaza_player_${roomId}`);
 
-    // 🚀 إذا الروم مقفلة، واللاعب ما عنده حساب سابق فيها (يعني لاعب جديد)، نطرده من الباب
     if (roomCheck?.is_locked && !currentPlayerId) {
       alert("عذراً، الروم مقفلة بواسطة المشرف ولا يمكنك الدخول 🔒");
       setIsJoiningUI(false);
@@ -278,11 +259,10 @@ export default function GameBoard() {
       if (existingP) {
         pData = existingP;
       } else {
-        // 🚀 حماية إضافية: لو اللاعب عنده آيدي قديم بس انحذف من قاعدة البيانات، والروم مقفلة، نطرده!
         if (roomCheck?.is_locked) {
           alert("عذراً، الروم مقفلة بواسطة المشرف ولا يمكنك الدخول 🔒");
           setIsJoiningUI(false);
-          localStorage.removeItem(`darwaza_player_${roomId}`); // تنظيف جهازه
+          localStorage.removeItem(`darwaza_player_${roomId}`); 
           return;
         }
         const { data: fallbackP } = await supabase.from('players').insert([{ room_id: roomId, name: targetName, emoji: "🎮", team: 'none', role: 'spectator', ip_address: ip, device_data: deviceData, is_online: true }]).select().single();
@@ -325,28 +305,38 @@ export default function GameBoard() {
     }
 
     setIsJoined(true); setIsJoiningUI(false);
-    if (isNewPlayer) addGameLog(targetName, 'انضم مشاهد 🍿', 'none', 'gray');
+    if (isNewPlayer) addGameLog(targetName, 'انضم كــمشاهد 🍿', 'none', 'gray');
   };
 
+  // 🚀 دالة عرض البانر وتشغيل الصوت بذكاء
   useEffect(() => {
     if (gamePhase === 'ended' && winnerTeam) {
       setShowEndBanner(true); 
-      setTimeout(() => {
-        if (userTeam === winnerTeam) {
-          playSound('win');
-          fireFullScreenConfetti();
-          document.body.classList.add('win-filter');
-          setTimeout(() => document.body.classList.remove('win-filter'), 5000);
-        } else if (userTeam === 'blue' || userTeam === 'red') {
-          playSound('lose');
-          document.body.classList.add('shake-screen-hard', 'lose-filter');
-          setTimeout(() => document.body.classList.remove('shake-screen-hard'), 600);
-          setTimeout(() => document.body.classList.remove('lose-filter'), 4000);
-        }
-      }, 100);
+      
+      // 🚀 السحر هنا: نتحقق هل الحالة "تغيرت" للتو إلى انتهت؟ (يعني مو تحديث صفحة)
+      const isNewEnding = prevPhaseRef.current !== 'ended' && prevPhaseRef.current !== null;
+
+      if (isNewEnding) {
+        setTimeout(() => {
+          if (userTeam === winnerTeam) {
+            playSound('win');
+            fireFullScreenConfetti();
+            document.body.classList.add('win-filter');
+            setTimeout(() => document.body.classList.remove('win-filter'), 5000);
+          } else if (userTeam === 'blue' || userTeam === 'red') {
+            playSound('lose');
+            document.body.classList.add('shake-screen-hard', 'lose-filter');
+            setTimeout(() => document.body.classList.remove('shake-screen-hard'), 600);
+            setTimeout(() => document.body.classList.remove('lose-filter'), 4000);
+          }
+        }, 100);
+      }
     } else {
       setShowEndBanner(false); 
     }
+
+    // 🚀 تحديث المرجع للحالة الحالية عشان نقارن فيها المرة الجاية
+    prevPhaseRef.current = gamePhase;
   }, [gamePhase, winnerTeam, userTeam]);
 
   useEffect(() => {
@@ -377,12 +367,10 @@ export default function GameBoard() {
     };
   }, [localPlayerId]);
 
-  // 🚀 مرجع ذكي للنقل التلقائي إذا انتهى الوقت
   const handleTimeUpRef = useRef(null);
   
   useEffect(() => {
     handleTimeUpRef.current = async () => {
-      // 🚀 المشرف فقط هو اللي ينفذ الأمر عشان ما يصير ضغط على قاعدة البيانات
       if (!isOwner || gamePhase === 'ended') return; 
       
       const newTurn = currentTurn === "blue" ? "red" : "blue";
@@ -402,7 +390,6 @@ export default function GameBoard() {
     };
   }, [isOwner, gamePhase, currentTurn, timerDuration, roomId]);
 
-  // 🚀 المؤقت يعتمد على التوقيت العالمي (getTrueTime) عشان يطابق كل الأجهزة
   useEffect(() => {
     if (!timerEndsAt || timerDuration === 0) { setTimeLeft(null); return; }
     const interval = setInterval(() => {
@@ -410,7 +397,7 @@ export default function GameBoard() {
       if (diff <= 0) { 
         setTimeLeft(0); 
         clearInterval(interval); 
-        if (handleTimeUpRef.current) handleTimeUpRef.current(); // نقل الدور فوراً إذا وصل 0
+        if (handleTimeUpRef.current) handleTimeUpRef.current(); 
       } 
       else { setTimeLeft(Math.floor(diff / 1000)); }
     }, 1000);
@@ -473,11 +460,9 @@ export default function GameBoard() {
     return () => { supabase.removeChannel(channel); };
   }, [roomId, isJoined, localPlayerId]);
 
-  // 🚀 دالة المشاركة (تفتح الواتساب بالجوال، وتنسخ باللابتوب أو في حال عدم وجود HTTPS)
   const handleShareRoom = async () => {
     const roomLink = window.location.href; 
     
-    // محاولة المشاركة الأساسية
     if (navigator.share && window.isSecureContext) {
       try {
         await navigator.share({
@@ -485,13 +470,12 @@ export default function GameBoard() {
           text: 'تعال العب معي فك الشفرة! غرفتنا جاهزة 🚀',
           url: roomLink,
         });
-        return; // إذا نجحت، وقف هنا
+        return; 
       } catch (error) {
         console.log('المستخدم ألغى المشاركة');
       }
     } 
     
-    // إذا ما دعم المشاركة، انسخ الرابط إجبارياً
     try {
       if (navigator.clipboard && window.isSecureContext) {
         await navigator.clipboard.writeText(roomLink);
@@ -543,7 +527,6 @@ export default function GameBoard() {
   };
 
   const quickJoin = async (targetTeam, targetRole) => {
-    // 🚀 تم إزالة المنع الداخلي، وصار المنع فقط للمثبتين كمشاهدين
     if (pinnedSpectators.includes(localPlayerId)) return alert("المالك ثبتك كمشاهد، ما تقدر تلعب! 📌");
     let finalRole = targetRole;
     if (userRole === 'master' && targetRole === 'decoder') { alert("حركات نص كم! 👀 شفت الكلمات كمشفر تبي ترجع مفكك؟ بنرجعك مشفر تلقائياً 👑"); finalRole = 'master'; }
@@ -561,7 +544,6 @@ export default function GameBoard() {
     if (gamePhase !== 'guessing' || currentTurn !== userTeam || userRole !== 'decoder') return;
     const newTurn = currentTurn === "blue" ? "red" : "blue";
     
-    // 🚀 التجديد الإجباري للوقت عند التخطي
     let currentTimerEndsAt = null;
     if (timerDuration > 0) currentTimerEndsAt = new Date(getTrueTime() + timerDuration * 1000).toISOString();
     
@@ -609,7 +591,6 @@ export default function GameBoard() {
     
     document.body.classList.remove('win-filter', 'lose-filter', 'shake-screen-hard');
 
-    // 🚀 تجديد الوقت عند بدء جولة جديدة
     let currentTimerEndsAt = null;
     if (timerDuration > 0) currentTimerEndsAt = new Date(getTrueTime() + timerDuration * 1000).toISOString();
 
@@ -627,16 +608,13 @@ export default function GameBoard() {
     addGameLog(userName, 'بدأ جولة 🔄', 'none', 'gray');
   };
 
-  // 🚀 1. جلب الحزم الخاصة من الجهاز، والحزم العامة من قاعدة البيانات
   useEffect(() => {
     const loadPacks = async () => {
       let loadedPacks = {};
       
-      // جلب الحزم الخاصة 🔒
       const localPacks = JSON.parse(localStorage.getItem('darwaza_private_packs') || '{}');
       loadedPacks = { ...loadedPacks, ...localPacks };
 
-      // جلب الحزم العامة المقبولة 🌍
       const { data: publicPacks } = await supabase.from('public_word_packs').select('*').eq('is_approved', true);
       if (publicPacks) {
         publicPacks.forEach(pack => {
@@ -649,11 +627,9 @@ export default function GameBoard() {
     loadPacks();
   }, []);
 
-  // 🚀 2. دالة حفظ الحزمة (تدعم الحفظ المحلي والعام في نفس الوقت)
-  const handleAddNewPack = async (packName, wordsArray, saveLocal, savePublic) => {
+  const handleAddNewPack = async (packName, wordsArray, saveLocal, savePublic, authorName, socialHandle) => {
     let alertMsg = "";
 
-    // حفظ في الجهاز
     if (saveLocal) {
       const newPackId = `private_${Date.now()}`;
       const newPackData = { name: `${packName} 🔒`, words: wordsArray };
@@ -665,9 +641,15 @@ export default function GameBoard() {
       alertMsg += "✅ تم حفظ الحزمة في مكتبتك الخاصة 🔒\n";
     }
 
-    // إرسال لقاعدة البيانات
     if (savePublic) {
-      const { error } = await supabase.from('public_word_packs').insert([{ name: packName, words: wordsArray, is_approved: false }]);
+      const { error } = await supabase.from('public_word_packs').insert([{ 
+        name: packName, 
+        words: wordsArray, 
+        is_approved: false,
+        author_name: authorName || null,
+        social_handle: socialHandle || null
+      }]);
+      
       if (error) {
         alertMsg += "❌ حدث خطأ أثناء إرسال الحزمة للعامة!\n";
       } else {
@@ -757,7 +739,6 @@ export default function GameBoard() {
       let finalNoms = newNoms;
       let currentTimerEndsAt = timerEndsAt;
 
-      // 🚀 تجديد الوقت عند الانتقال للدور التالي (للمشفر)
       if (newTurn !== currentTurn || newPhase !== "guessing") {
         finalNoms = {};
         if (newPhase === "ended") {
@@ -786,7 +767,6 @@ export default function GameBoard() {
     if (finalCount === 0) return alert("⚠️ لا تنسى تختار عدد الكلمات من القائمة المنسدلة!");
 
     if (userRole === "master") {
-      // 🚀 تجديد الوقت للمفككين عند إرسال الشفرة
       let currentTimerEndsAt = null;
       if (timerDuration > 0) currentTimerEndsAt = new Date(getTrueTime() + timerDuration * 1000).toISOString();
       
@@ -820,7 +800,6 @@ export default function GameBoard() {
   const redDecoders = redPlayers.filter(p => p.role === 'decoder');
   const spectatorPlayers = roomPlayers.filter(p => p.team === 'none');
 
-// 🚀 اللوحة تتغبش وتقفل عليك بس إذا المشرف ثبتك كمشاهد 📌
   const boardFaded = userRole === 'spectator' && pinnedSpectators.includes(localPlayerId);
   if (!isJoined) {
     return (
@@ -874,31 +853,25 @@ export default function GameBoard() {
           </div>
         )}
 
-        {/* 🚀 شريط المهام العلوي (مستوى وسطر واحد إجباري لجميع الأجهزة) */}
         <div className="w-full max-w-2xl bg-slate-900 border border-slate-800 p-2 sm:p-3 rounded-2xl shadow-sm flex flex-row items-center mx-2 relative z-40 overflow-x-auto hide-scroll" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
           <style>{`.hide-scroll::-webkit-scrollbar { display: none; }`}</style>
           
-          {/* 1. زر ملفي (أخضر ذكي) */}
           <button onClick={openSettings} className="bg-gradient-to-br from-teal-600 to-teal-800 text-white border border-teal-700 text-[9px] sm:text-[10px] font-bold px-2 sm:px-3 py-1.5 rounded-xl shadow-sm hover:from-teal-500 hover:to-teal-700 transition-colors cursor-pointer shrink-0 ml-1 sm:ml-1.5">
             ملفي 👤
           </button>
           
-          {/* 2. زر الأعضاء (أخضر ذكي) */}
           <button onClick={() => setIsPlayersListOpen(true)} className="bg-gradient-to-br from-teal-500 to-teal-700 text-white border border-teal-600 text-[9px] sm:text-[10px] font-bold px-2 sm:px-3 py-1.5 rounded-xl shadow-sm transition-colors cursor-pointer shrink-0 ml-1 sm:ml-1.5">
             الأعضاء 👥
           </button>
           
-          {/* 3. زر المشاركة (رمادي) */}
           <button onClick={handleShareRoom} className="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[9px] sm:text-[10px] font-bold px-2 sm:px-3 py-1.5 rounded-xl shadow-sm transition-colors cursor-pointer shrink-0">
             {isCopied ? 'تم النسخ ✅' : 'مشاركة 📤'}
           </button>
           
-          {/* 4. المؤقت (يأخذ باقي المساحة ليدفع الإعدادات لليسار، ويظل بنفس السطر) */}
           <div className={`flex-1 text-center font-mono text-[13px] sm:text-xl font-black shrink-0 px-1 min-w-[50px] ${timeLeft !== null && timeLeft <= 10 ? 'text-[#FECACA] animate-pulse' : 'text-[#F5F5DC]'}`}>
             {timerDuration > 0 && (timerEndsAt === null ? formatTime(timerDuration) : formatTime(timeLeft))}
           </div>
 
-          {/* 5. زر الإعدادات (أخضر ذكي - يثبت في أقصى اليسار) */}
           {isOwner && (
             <button onClick={() => setIsAdminModalOpen(true)} className="bg-gradient-to-br from-teal-600 to-teal-800 text-white border border-teal-700 px-2 sm:px-3 py-1.5 rounded-xl text-[9px] sm:text-[10px] font-bold shadow-sm transition-colors cursor-pointer shrink-0">
               الإعدادات ⚙️

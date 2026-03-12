@@ -12,6 +12,24 @@ export default function Lobby() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isLoading, setIsLoading] = useState(true);
 
+  // 🚀 دالة تحويل التاريخ إلى (منذ 5 دقائق، منذ ساعة...)
+  const timeAgo = (dateString) => {
+    if (!dateString) return "";
+    const seconds = Math.floor((new Date() - new Date(dateString)) / 1000);
+    
+    let interval = seconds / 31536000;
+    if (interval > 1) return `منذ ${Math.floor(interval)} سنة`;
+    interval = seconds / 2592000;
+    if (interval > 1) return `منذ ${Math.floor(interval)} شهر`;
+    interval = seconds / 86400;
+    if (interval > 1) return `منذ ${Math.floor(interval)} يوم`;
+    interval = seconds / 3600;
+    if (interval > 1) return `منذ ${Math.floor(interval)} ساعة`;
+    interval = seconds / 60;
+    if (interval >= 1) return `منذ ${Math.floor(interval)} دقيقة`;
+    return "الآن";
+  };
+
   useEffect(() => {
     const savedName = localStorage.getItem("darwaza_global_name");
     if (savedName) {
@@ -37,10 +55,8 @@ export default function Lobby() {
     };
   }, [router]);
 
-  // 🚀 الدالة المحدثة والذكية لجلب الغرف
   const fetchRooms = async () => {
     try {
-      // 1. نجيب أحدث 50 غرفة غير مقفلة (بدون شروط وقت تعقد السيرفر)
       const { data, error } = await supabase
         .from("rooms")
         .select("id, name, is_locked, created_at, players(id, is_online)")
@@ -58,15 +74,13 @@ export default function Lobby() {
           const activePlayers = room.players ? room.players.filter(p => p.is_online === true) : [];
           return {
             ...room,
-            // 2. إذا الغرفة ما لها اسم، نعطيها اسم افتراضي عشان ما تختفي
             name: room.name || `غرفة عامة (${room.id})`, 
             playerCount: activePlayers.length, 
           };
         })
-        // 3. ترتيب الغرف: اللي فيها لاعبين أكثر تطلع فوق، ثم الأحدث
         .sort((a, b) => {
           if (b.playerCount !== a.playerCount) {
-            return b.playerCount - a.playerCount; 
+            return a.playerCount - b.playerCount; 
           }
           return new Date(b.created_at) - new Date(a.created_at);
         });
@@ -154,7 +168,13 @@ export default function Lobby() {
               <div key={room.id} className="bg-[#020617] border border-slate-800/80 p-3 sm:p-4 rounded-2xl flex justify-between items-center hover:border-teal-900/50 transition-all group">
                 <div className="flex flex-col gap-1.5">
                   <h4 className="text-xs sm:text-sm font-black text-slate-200 group-hover:text-teal-400 transition-colors">{room.name}</h4>
-                  <span className="text-[9px] sm:text-[10px] text-slate-500 font-bold bg-slate-900/80 px-2 py-0.5 rounded-md w-fit border border-slate-800">كود: {room.id}</span>
+                  
+                  {/* 🚀 إضافة وقت الإنشاء بجانب الكود */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-[9px] sm:text-[10px] text-slate-500 font-bold bg-slate-900/80 px-2 py-0.5 rounded-md w-fit border border-slate-800">كود: {room.id}</span>
+                    <span className="text-[8px] sm:text-[9px] text-slate-600 font-bold">⏱️ {timeAgo(room.created_at)}</span>
+                  </div>
+
                 </div>
                 
                 <div className="flex items-center gap-3 sm:gap-6">
