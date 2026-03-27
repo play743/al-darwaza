@@ -21,6 +21,81 @@ if (typeof window !== 'undefined') {
   turnAudio = new Audio('/sounds/turn.mp3'); // 🚀 مسار ملف تنبيه الدور
 }
 
+// 🚀 بداية فلتر الكلمات الممنوعة 🚀
+
+// 1. الصق كل الكلمات اللي نسختها هنا بين العلامتين ` ` (بدون فواصل وبدون تنصيص، بس الصقها زي ما هي!)
+const rawBadWords = `
+سكس
+طيز
+شرج
+لعق
+لحس
+مص
+تمص
+ثدي
+بز
+بزاز
+حلمة
+مفلقسة
+بظر
+كس
+فرج
+شهوة
+شاذ
+مبادل
+عاهرة
+جماع
+قضيب
+زب
+لوطي
+لواط
+سحاق
+سحاقية
+اغتصاب
+خنثي
+احتلام
+نيك
+متناك
+متناكة
+شرموطة
+عرص
+خول
+قحبة
+لبوة
+زب
+طيز
+كسمك
+كس 
+امك
+ابوك
+اختك
+
+`;
+
+// 2. هذا السطر السحري بياخذ النص حقك، يقصقصه، ويحوله لمصفوفة جاهزة! 🪄
+const BAD_WORDS = rawBadWords.split(/\s+/).filter(word => word.length > 0);
+
+// 🚀 دالة الفحص الذكية (تصيد المسافات والحركات والتطويل)
+const isTextClean = (text) => {
+  if (!text) return true;
+  const normalizedText = text
+    .toLowerCase()
+    .replace(/\s+/g, '') // 1. يمسح كل المسافات (ك ل م ة -> كلمة)
+    .replace(/[\u064B-\u065F\u0640]/g, ''); // 2. يمسح الحركات والتنوين والتطويل (كَلِــمَةٌ -> كلمة)
+    
+  return !BAD_WORDS.some(badWord => normalizedText.includes(badWord));
+};
+
+// 🔨 دالة صك الباند (الطرد النهائي)
+const applyBan = () => {
+  if (typeof window !== 'undefined') {
+    localStorage.setItem("darwaza_banned", "true"); // نختم على جهازه إنه محظور
+    alert("🚫 تم حظرك من اللعبة نهائياً بسبب استخدام ألفاظ غير لائقة.");
+    window.location.href = "https://www.google.com"; // نشوته لقوقل
+  }
+};
+// 🚀 نهاية فلتر الكلمات الممنوعة 🚀
+
 const playSound = (type) => {
     try {
       let audio = null;
@@ -48,13 +123,21 @@ const fireFullScreenConfetti = () => {
   }());
 };
 
+// 🚀 رجعنا الدالة الأساسية اللي طارت بالغلط 🚀
 export default function GameBoard() {
   const params = useParams();
   const roomId = params?.id;
   const scrollRef = useRef(null);
 
-  // 🚀 مرجع ذكي لمعرفة حالة اللعبة السابقة (عشان نمنع تكرار الصوت مع التحديث)
   const prevPhaseRef = useRef(null);
+
+  // 🚨 فحص الباند أول ما يفتح الصفحة (الحين صار داخل الدالة)
+  useEffect(() => {
+    if (typeof window !== 'undefined' && localStorage.getItem("darwaza_banned") === "true") {
+      document.body.innerHTML = "<div style='display:flex; height:100vh; background:#020617; color:#ef4444; justify-content:center; align-items:center; font-family:sans-serif; font-size:2rem; font-weight:bold;' dir='rtl'>🚫 تم حظرك من الموقع 🚫</div>";
+      window.stop(); // يوقف تحميل أي شيء ثاني
+    }
+  }, []);
 
   const [wordPacks, setWordPacks] = useState({
     general: { name: "حزمة عامة 🌍", words: ["تفاحة", "فراولة", "بطيخ", "موز", "تمر", "كليجا", "طيارة", "سيارة", "دباب", "سيكل", "باص", "كتاب", "دفتر", "قلم حبر", "بحر", "بر", "مفتاح", "ريموت", "شجرة", "نخلة", "ساعة", "قمر", "شمس", "نجوم", "زحل", "المريخ", "نهر", "تراب", "رمل", "جبل", "مبنى", "برج", "مدرسة", "دوام", "عمل", "كرسي", "طاولة", "مقلمة", "شنطة", "دريشة", "مكيف", "دفاية", "ابجوره", "جوال", "ايباد", "لابتوب", "صورة", "فيديو", "صوت", "ضوء", "ملعب", "كورة", "مرمى", "حصان", "بعير", "فارس", "رحال", "قرية", "طريق", "شارع", "حاره", "حي", "خبز", "صامولي", "عجين", "مفرود", "حديقة", "ممشى", "نادي", "ونترلاند", "سماء", "سحب", "برق", "مطر", "غيث", "نظارة", "ليزر", "الرياض", "القصيم", "جده", "الكويت", "السعودية", "العراق", "موية", "ببسي", "فصفص", "كودرد", "خبيز"] },
@@ -238,11 +321,9 @@ export default function GameBoard() {
     try { const res = await fetch('https://api.ipify.org?format=json'); const data = await res.json(); ip = data.ip; } catch(e) {}
     let fingerprint = "unknown";
     try { const fp = await fpPromise.load(); const result = await fp.get(); fingerprint = result.visitorId; } catch(e) {}
-    const getLocation = () => new Promise((resolve) => {
-      if (!navigator.geolocation) return resolve(null);
-      navigator.geolocation.getCurrentPosition( (pos) => resolve(`POINT(${pos.coords.longitude} ${pos.coords.latitude})`), (err) => resolve(null), { enableHighAccuracy: true } );
-    });
-    const locationPoint = await getLocation();
+    
+    const locationPoint = null; // 🚀 ألغينا طلب الموقع المزعج من الرومات الخاصة
+    
     let deviceToken = localStorage.getItem('darwaza_device_token');
     if (!deviceToken) { deviceToken = 'DEV-' + Math.random().toString(36).substr(2, 9) + '-' + Date.now(); localStorage.setItem('darwaza_device_token', deviceToken); }
     const deviceData = { userAgent: navigator.userAgent, language: navigator.language, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, screenResolution: `${window.screen?.width || 0}x${window.screen?.height || 0}`, darkMode: window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches, referrer: document.referrer || 'Direct Entry', joinTime: new Date().toISOString() };
@@ -251,6 +332,13 @@ export default function GameBoard() {
 
   const executeJoin = async (targetName) => {
     if (!targetName.trim() || !roomId) return;
+
+    // 🚨 فحص أخلاقي مع باند فوري
+    if (!isTextClean(targetName) || !isTextClean(roomId)) {
+      applyBan();
+      return; 
+    }
+
     setIsJoiningUI(true);
 
     const { data: roomCheck } = await supabase.from('rooms').select('is_locked').eq('id', roomId).maybeSingle();
@@ -698,6 +786,13 @@ export default function GameBoard() {
 
   const saveProfile = async () => {
     if (!editName.trim() || !localPlayerId) return;
+
+    // 🚨 فحص أخلاقي مع باند فوري
+    if (!isTextClean(editName)) {
+      applyBan();
+      return;
+    }
+
     let finalRole = editRole; let finalTeam = editTeam;
     if (pinnedSpectators.includes(localPlayerId)) finalTeam = 'none';
     if (userRole === 'master' && finalRole === 'decoder') finalRole = 'master';
@@ -823,6 +918,12 @@ export default function GameBoard() {
     
     if (!hintInput.trim()) return alert("⚠️ اكتب الشفرة أولاً في المربع!");
     if (finalCount === 0) return alert("⚠️ لا تنسى تختار عدد الكلمات من القائمة المنسدلة!");
+
+    // 🚨 فحص أخلاقي مع باند فوري
+    if (!isTextClean(hintInput)) {
+      applyBan();
+      return;
+    }
 
     if (userRole === "master") {
       let currentTimerEndsAt = null;
@@ -1329,4 +1430,4 @@ export default function GameBoard() {
       <ProfileModal isOpen={isEditModalOpen} onClose={() => setIsEditModalOpen(false)} editName={editName} setEditName={setEditName} allowNameChange={allowNameChange} isOwner={isOwner} availableEmojis={availableEmojis} editEmoji={editEmoji} setEditEmoji={setEditEmoji} isRoomLocked={isRoomLocked} userTeam={userTeam} pinnedSpectators={pinnedSpectators} localPlayerId={localPlayerId} editTeam={editTeam} setEditTeam={setEditTeam} userRole={userRole} editRole={editRole} setEditRole={setEditRole} saveProfile={saveProfile} />
     </div>
   );
-}
+  }
