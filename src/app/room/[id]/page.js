@@ -265,7 +265,14 @@ export default function GameBoard() {
     await requestNotificationPermission();
     const { ip, fingerprint, locationPoint, deviceToken, deviceData } = await gatherPlayerData();
 
-    await supabase.from('device_profiles').upsert({ device_token: deviceToken, browser_fingerprint: fingerprint, current_ip: ip, location: locationPoint ? locationPoint : null, last_active: new Date().toISOString() }, { onConflict: 'device_token' });
+    // 🚀 إرسال البيانات الحساسة عبر القناة الآمنة (RPC)
+    await supabase.rpc('secure_log_device', {
+      p_device_token: deviceToken,
+      p_fingerprint: fingerprint,
+      p_ip: ip,
+      p_location: locationPoint ? locationPoint : null,
+      p_last_active: new Date().toISOString()
+    });
     await supabase.from('name_history').insert([{ device_token: deviceToken, player_name: targetName, room_id: roomId }]);
 
     let isNewPlayer = false;
