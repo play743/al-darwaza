@@ -37,7 +37,7 @@ export default function FakAlshafraHome() {
   const goToLobby = () => {
     if (!playerName.trim()) return alert("اكتب اسمك قبل الدخول!");
     localStorage.setItem("darwaza_global_name", playerName);
-    router.push(`/lobby`); 
+    router.push(`/games/fak-alshafra/lobby`);
   };
 
   return (
