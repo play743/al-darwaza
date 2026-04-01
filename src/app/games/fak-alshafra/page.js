@@ -31,7 +31,7 @@ export default function FakAlshafraHome() {
       return alert("فشل الاتصال بقاعدة البيانات لإنشاء الغرفة!");
     }
 
-    router.push(`/room/${randomRoomId}`);
+    router.push(`/games/fak-alshafra/room/${randomRoomId}`);
   };
 
   const goToLobby = () => {

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "../../lib/supabase"; 
+import { supabase } from "../../../../lib/supabase"; 
 import fpPromise from '@fingerprintjs/fingerprintjs'; // 🚀 ضفنا هذي عشان نسجل موقعه وجهازه للسيرفر
 
 export default function Lobby() {
@@ -175,8 +175,9 @@ export default function Lobby() {
   };
 
   const joinRoom = (roomId) => {
-    router.push(`/room/${roomId}`);
-  };
+  // المسار القديم كان: `/room/${roomId}`
+  router.push(`/games/fak-alshafra/room/${roomId}`); // ✅ المسار الجديد
+};
 
   const filteredRooms = activeRooms.filter((room) => 
     room.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -198,7 +199,7 @@ export default function Lobby() {
           <div className="text-6xl mb-6 animate-bounce drop-shadow-[0_0_15px_rgba(45,212,191,0.4)]">📍</div>
           <h2 className="text-xl font-black text-teal-400 mb-4">لعرض الرومات القريبة منك</h2>
           <p className="text-sm text-slate-400 font-bold mb-8 leading-relaxed px-2">
-            عشان نعرض لك الغرف المتاحة حولك بشكل دقيق، نحتاج إذنك للوصول لموقعك الجغرافي.
+            عشان نعرض لك الغرف المتاحة حولك ، نحتاج إذنك للوصول لموقعك الجغرافي.
           </p>
           
           <button 
